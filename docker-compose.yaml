@@ -9,8 +9,8 @@ services:
       POSTGRES_USER: myuser            # Имя пользователя для базы данных
       POSTGRES_PASSWORD: mypassword    # Пароль для пользователя
       POSTGRES_DB: mydatabase         # Имя базы данных
-#    volumes:
-#      - postgres_data:/var/lib/postgresql/data  # Тома для хранения данных PostgreSQL
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data  # Тома для хранения данных PostgreSQL
     ports:
       - "5433:5432"  # Открываем порт PostgreSQL для подключения извне
 

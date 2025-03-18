@@ -4,11 +4,11 @@ from pydantic import BaseModel, EmailStr
 
 # Базовая схема пользователя
 class UserBase(BaseModel):
-    email: EmailStr
     first_name: str
     last_name: str
+    email: EmailStr
     phone: str
-    google_authenticated: Optional[bool] = None
+    google_authenticated: bool = True
     role: str
 
 
@@ -19,33 +19,49 @@ class UserAuthInfo(UserBase):
 
 # Схема для чтения пользователя
 class ClientBase(UserBase):
-    google_authenticated:  bool
-    whatsapp: str
-    parent_name: str
-    birth_date: datetime.date
+    whatsapp: Optional[str] = None
+    parent_name: Optional[str] = None
+    active: Optional[bool] = True
+    birth_date: datetime.datetime
+
+class ClientCreate(ClientBase):
+    pass
+
+
+
+class ClientRead(ClientBase):
+    id: int
+    created_at: datetime.datetime
+    model_config = {"from_attributes": True}
+
+class ClientUpdate(ClientRead):
+    pass
+
 
 # Схема администратора
 class AdminBase(UserBase):
     pass
 
+class AdminRead(AdminBase):
+    id: int
+    model_config = {"from_attributes": True}
+
+
 class TrainerBase(UserBase):
+    active: bool = True
     salary: int
     fixed_salary: bool
 
-class AdminRead(AdminBase):
-    id: int
-    class Config:
-        orm_mode: True
-        from_attributes = True
-
-# Схема клиента
-class ClientRead(ClientBase):
-    id: int
+class TrainerCreate(TrainerBase):
+    pass
 
 class TrainerRead(TrainerBase):
     id: int
+    created_at: datetime.datetime
+    model_config = {"from_attributes": True}
 
-
+class TrainerUpdate(TrainerRead):
+    pass
 
 class TokenData(BaseModel):
     token: str  # Google ID токен, который приходит с фронта

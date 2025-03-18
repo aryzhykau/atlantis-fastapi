@@ -16,3 +16,4 @@ Base = declarative_base()
 
 from app.entities.users.models import *
 from app.entities.training_types.models import *
+

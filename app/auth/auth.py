@@ -58,6 +58,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
+
+
 @router.get("/google", response_model=TokenResponse)
 async def auth_google(authorization: str = Header(...), db: Session =  Depends(get_db)):
     logger.debug("Processing authorization")
@@ -68,9 +70,10 @@ async def auth_google(authorization: str = Header(...), db: Session =  Depends(g
     user = get_user_by_email(db, email=user_data["email"])
     if not user:
         raise HTTPException(status_code=403, detail="Access denied: user not found")
-
+    logger.debug(user.role)
     # Генерируем access_token
     access_token = create_access_token(data={"sub": user.email,"id": user.id ,"role": user.role})
 
-
     return {"access_token": access_token}
+
+
