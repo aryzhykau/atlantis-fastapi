@@ -1,6 +1,6 @@
 import os
 import requests
-from jose import jwt
+from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Header
 import google.auth
@@ -50,6 +50,7 @@ def get_user_info_from_access_token(authorization: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching user info: {str(e)}")
 
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """ Создаёт JWT access token """
     to_encode = data.copy()
@@ -59,9 +60,24 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
+def refresh_access_token(token: str):
+    """ Проверяет токен и возвращает новый токен """
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        email = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+
+        new_token = create_access_token(
+            data={"sub": email, "id": payload.get("id"), "role": payload.get("role")}
+        )
+        return new_token
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Token is invalid or expired: {str(e)}")
+
 
 @router.get("/google", response_model=TokenResponse)
-async def auth_google(authorization: str = Header(...), db: Session =  Depends(get_db)):
+async def auth_google(authorization: str = Header(...), db: Session = Depends(get_db)):
     logger.debug("Processing authorization")
     logger.debug(authorization)
     """ Проверяет Google ID Token, ищет пользователя в БД и выдаёт JWT """
@@ -72,8 +88,13 @@ async def auth_google(authorization: str = Header(...), db: Session =  Depends(g
         raise HTTPException(status_code=403, detail="Access denied: user not found")
     logger.debug(user.role)
     # Генерируем access_token
-    access_token = create_access_token(data={"sub": user.email,"id": user.id ,"role": user.role})
+    access_token = create_access_token(data={"sub": user.email, "id": user.id, "role": user.role})
 
     return {"access_token": access_token}
 
 
+@router.post("/refresh-token", response_model=TokenResponse)
+async def refresh_token(token: str):
+    """ Обновляет JWT токен """
+    new_token = refresh_access_token(token)
+    return {"access_token": new_token}

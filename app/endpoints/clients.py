@@ -64,4 +64,4 @@ def update_client(client_id: int, client_data: ClientCreate, current_user: dict 
         logger.debug(client_to_update)
         return client_to_update
     else:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=403, detail="Unauthorized")

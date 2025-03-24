@@ -16,4 +16,9 @@ Base = declarative_base()
 
 from app.entities.users.models import *
 from app.entities.training_types.models import *
-
+from app.entities.trainings.models import *
+from app.entities.subscriptions.models import *
+from app.entities.invoices.models import *
+from app.entities.payments.models import *
+from app.entities.relations_models.client_subscriptions import *
+from app.entities.relations_models.invoice_payments import *

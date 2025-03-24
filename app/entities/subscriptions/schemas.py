@@ -4,17 +4,16 @@ from pydantic import BaseModel
 from typing import Optional
 
 
-class TrainingTypeBase(BaseModel):
-    title: str # Название типа тренировки
-    require_subscription: bool
+class SubscriptionBase(BaseModel):
+    total_sessions: int # Название типа тренировки
     price: int
 
 
-class TrainingTypeCreate(TrainingTypeBase):
+class SubscriptionCreate(SubscriptionBase):
     pass
 
 
-class TrainingTypeRead(TrainingTypeBase):
+class SubscriptionRead(SubscriptionBase):
     id: int
     created_at: datetime.datetime
     updated_at: datetime.datetime

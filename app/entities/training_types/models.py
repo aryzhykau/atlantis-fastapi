@@ -8,6 +8,7 @@ class TrainingType(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True, nullable=False)  # Название типа тренировки
     require_subscription = Column(Boolean, default=False)  # Описание типа тренировки
+    price = Column(Integer, nullable=False)
     created_at = Column(Date, nullable=False)
     updated_at = Column(Date, nullable=False)
 

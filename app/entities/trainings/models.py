@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, ForeignKey, Date, Time, DateTime
+from sqlalchemy import Column, Integer, ForeignKey, Date, Time, DateTime, Boolean, UniqueConstraint
+from sqlalchemy.orm import relationship
+
 from app.database import Base
 
 
@@ -12,3 +14,23 @@ class Training(Base):
     training_type_id = Column(Integer, ForeignKey("training_types.id"), nullable=False)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+
+    trainer = relationship("User", backref="trainings")
+    clients = relationship("TrainingClient", backref="training")
+
+
+class TrainingClient(Base):
+    __tablename__ = "training_clients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    training_id = Column(Integer, ForeignKey("trainings.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    covered_by_subscription = Column(Boolean, nullable=False, default=False)
+    trial_training = Column(Boolean, nullable=False, default=False)
+
+    client = relationship("User", backref="training_clients")
+
+    __table_args__ = (
+        UniqueConstraint('training_id', 'client_id', name='unique_training_client'),
+    )
