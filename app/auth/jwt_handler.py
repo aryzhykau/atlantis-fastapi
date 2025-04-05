@@ -1,9 +1,10 @@
-from authlib.jose import jwt
-from fastapi import Depends, HTTPException, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.auth.auth import JWT_SECRET, JWT_ALGORITHM
 import logging
+
+from authlib.jose import jwt
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
+
+from app.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ def verify_jwt_token(token: str = Depends(oauth2_scheme)):
     logger.debug("EXECUTING")
     """ Проверяет JWT access token """
     try:
-        payload = jwt.decode(token, JWT_SECRET)
+        payload = jwt.decode(token, config.JWT_SECRET_KEY)
 
         logger.debug(f"payload = {payload}")
         return {"email": payload["sub"], "role": payload["role"], "id": payload["id"]}

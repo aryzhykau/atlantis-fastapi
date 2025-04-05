@@ -34,7 +34,7 @@ def get_user_info_from_access_token(authorization: str):
     try:
         # Проверка токена с использованием Google API
         access_token = authorization.replace("Bearer ", "").strip()
-
+        logger.debug(config.POSTGRES_DB)
         response = requests.get(config.GOOGLE_DISCOVERY_URL, headers={"Authorization": f"Bearer {access_token}"})
 
         if response.status_code != 200:
@@ -50,9 +50,9 @@ def get_user_info_from_access_token(authorization: str):
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """ Создаёт JWT access token """
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm=config.JWT_ALGORITHM)
     return encoded_jwt
 
 
@@ -74,10 +74,9 @@ def refresh_access_token(token: str):
 
 @router.get("/google", response_model=TokenResponse)
 async def auth_google(authorization: str = Header(...), db: Session = Depends(get_db)):
-    logger.debug("Processing authorization")
-    logger.debug(authorization)
     """ Проверяет Google ID Token, ищет пользователя в БД и выдаёт JWT """
     user_data = get_user_info_from_access_token(authorization)
+    logger.debug(user_data)
     # Проверяем, есть ли пользователь в базе
     user = get_user_by_email(db, email=user_data["email"])
     if not user:

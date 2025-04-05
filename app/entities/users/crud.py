@@ -1,22 +1,21 @@
+import logging
+from datetime import datetime
 from typing import Union
 
 from fastapi import HTTPException
+from pydantic import EmailStr
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from pydantic import EmailStr
-from datetime import datetime
 
-from app.entities.pagination.schemas import PaginatedResponse
 from app.entities.users.models import User
 from app.entities.users.models import UserRoleEnum
 from app.entities.users.schemas import ClientRead, ClientCreate, TrainerCreate, TrainerRead
-import logging
-
 
 logger = logging.getLogger(__name__)
 
 
 def get_user_by_email(db: Session, email: EmailStr):
+    logger.debug(f"EMAIL = {email}")
     return db.query(User).filter(User.email == email).first()
 
 
