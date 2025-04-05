@@ -3,15 +3,15 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.entities.training_types.schemas import TrainingTypeCreate, TrainingTypeRead
 from app.entities.training_types.crud import create_training_type, get_training_types, get_training_type_by_id
+from app.entities.training_types.schemas import TrainingTypeCreate, TrainingTypeRead
 from app.entities.users.models import UserRoleEnum
 
 router = APIRouter()
 
 @router.post("/", response_model=TrainingTypeRead, status_code=201)
 async def add_training_type(training_type: TrainingTypeCreate, db: Session = Depends(get_db), current_user = Depends(verify_jwt_token)):
-    if current_user["role"] != UserRoleEnum.ADMIN:
+    if current_user["role"] == UserRoleEnum.ADMIN:
         return create_training_type(db, training_type)
     else:
         raise HTTPException(status_code=403, detail="Forbidden")

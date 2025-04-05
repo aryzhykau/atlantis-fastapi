@@ -1,10 +1,10 @@
 import datetime
 
 from pydantic import BaseModel
-from typing import Optional
 
 
 class SubscriptionBase(BaseModel):
+    title: str
     total_sessions: int # Название типа тренировки
     price: int
 

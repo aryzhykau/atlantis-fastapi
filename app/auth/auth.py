@@ -1,16 +1,15 @@
-import os
-import requests
-from jose import jwt, JWTError
+import logging
 from datetime import datetime, timedelta
+from typing import Optional
+
+import requests
+from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Depends, Header
-import google.auth
-from google.auth.transport.requests import Request
+from jose import jwt, JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from dotenv import load_dotenv
-from typing import Optional
-import logging
 
+from app.config import config
 from app.dependencies import get_db
 from app.entities.users.crud import get_user_by_email  # Функция для поиска пользователя в БД
 
@@ -21,12 +20,9 @@ load_dotenv()
 
 router = APIRouter()
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "317287995854-hjm52r9lvi0sungac6v5vbv2h2qr9cut.apps.googleusercontent.com")
-JWT_SECRET = os.getenv("JWT_SECRET", "hingshfiuehrigdukyshekjxflhas;kou498xfmh")  # Лучше хранить в .env
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+
 
 
 
@@ -39,7 +35,7 @@ def get_user_info_from_access_token(authorization: str):
         # Проверка токена с использованием Google API
         access_token = authorization.replace("Bearer ", "").strip()
 
-        response = requests.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
+        response = requests.get(config.GOOGLE_DISCOVERY_URL, headers={"Authorization": f"Bearer {access_token}"})
 
         if response.status_code != 200:
             raise HTTPException(status_code=401, detail="Invalid access token")
@@ -54,16 +50,16 @@ def get_user_info_from_access_token(authorization: str):
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """ Создаёт JWT access token """
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
     return encoded_jwt
 
 
 def refresh_access_token(token: str):
     """ Проверяет токен и возвращает новый токен """
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
         email = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=401, detail="Invalid token payload")

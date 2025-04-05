@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date
+from sqlalchemy import Column, Integer, String, Boolean, func, DateTime
+
 from app.database import Base
 
 
@@ -9,8 +10,8 @@ class TrainingType(Base):
     title = Column(String, index=True, nullable=False)  # Название типа тренировки
     require_subscription = Column(Boolean, default=False)  # Описание типа тренировки
     price = Column(Integer, nullable=False)
-    created_at = Column(Date, nullable=False)
-    updated_at = Column(Date, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 

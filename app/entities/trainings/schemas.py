@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, field_validator
 from datetime import date, time, datetime
 from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.entities.users.schemas import ClientRead
 
@@ -65,3 +66,4 @@ class TrainingWithClientsRead(TrainingReadSchema):
 
     class Config:
         orm_mode = True
+

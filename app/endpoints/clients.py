@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from app.dependencies import get_db
-from app.entities.pagination.schemas import PaginatedResponse
-from app.entities.users.models import User
-from app.entities.users.schemas import ClientCreate, ClientRead, ClientUpdate
-from typing import List, Any
-from app.auth.jwt_handler import verify_jwt_token
-from app.entities.users.models import UserRoleEnum
-from app.entities.users.crud import create_user, delete_user_by_id, \
-    get_users_by_role_paginated, get_all_users_by_role, update_user
 import logging
+from typing import List, Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.auth.jwt_handler import verify_jwt_token
+from app.dependencies import get_db
+from app.entities.users.crud import create_user, delete_user_by_id, \
+    get_all_users_by_role, update_user
+from app.entities.users.models import UserRoleEnum
+from app.entities.users.schemas import ClientCreate, ClientRead
 
 router = APIRouter()
 

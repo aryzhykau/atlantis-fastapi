@@ -1,6 +1,7 @@
 from enum import Enum
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Date, Enum as SQLEnum
-from sqlalchemy.orm import relationship
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum
+
 from app.database import Base
 
 
@@ -23,10 +24,10 @@ class User(Base):
     whatsapp = Column(String, nullable=True)
     salary = Column(Integer, nullable=True)
     active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(Date, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
     fixed_salary = Column(Boolean, nullable=True)
     parent_name = Column(String, nullable=True)
-    birth_date = Column(Date, nullable=True)
+    birth_date = Column(DateTime(timezone=True), nullable=True)
     google_authenticated = Column(Boolean, default=True)
     notifications_enabled = Column(Boolean, default=True)
 
