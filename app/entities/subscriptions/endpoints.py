@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -43,7 +43,7 @@ async def update_subscription(
         # Update subscription details
         for key, value in subscription.dict().items():
             setattr(existing_subscription, key, value)
-        existing_subscription.updated_at = datetime.datetime.utcnow()
+        existing_subscription.updated_at = datetime.now(tz=timezone.utc)
         db.commit()
         db.refresh(existing_subscription)
         return existing_subscription

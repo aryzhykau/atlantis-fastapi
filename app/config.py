@@ -9,7 +9,8 @@ class Config(BaseSettings):
     POSTGRES_DB: str = "postgres"
     JWT_SECRET_KEY: str = "secret"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_DISCOVERY_URL: str = ""
