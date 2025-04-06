@@ -63,7 +63,5 @@ class TrainingClientRead(BaseModel):
 
 class TrainingWithClientsRead(TrainingReadSchema):
     clients: List[TrainingClientRead]
-
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 

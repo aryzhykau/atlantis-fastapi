@@ -1,9 +1,11 @@
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import NoResultFound
 from datetime import datetime
-from .schemas import TrainingCreateSchema, TrainingSchema, TrainingWithClientsCreate
+
+from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import Session
+
 from .models import Training, TrainingClient
+from .schemas import TrainingSchema, TrainingWithClientsCreate, TrainingWithClientsRead
 
 
 def create_training_with_clients(db: Session, training_data: TrainingWithClientsCreate):
@@ -47,8 +49,11 @@ def get_training_by_id(db: Session, training_id: int):
 
 
 def get_all_trainings(db: Session):
-    return db.query(Training).all()
-
+    try:
+        trainings = db.query(Training).all()
+        return [TrainingWithClientsRead.model_validate(trainings) for trainings in trainings] if trainings else []
+    except NoResultFound:
+        return None
 
 def update_training(db: Session, training_id: int, updated_data: TrainingSchema):
     db_training = db.query(Training).filter(Training.id == training_id).first()
