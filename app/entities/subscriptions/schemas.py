@@ -5,8 +5,10 @@ from pydantic import BaseModel
 
 class SubscriptionBase(BaseModel):
     title: str
-    total_sessions: int # Название типа тренировки
+    total_sessions: int
+    duration: int# Название типа тренировки
     price: int
+    active: bool = True
 
 
 class SubscriptionCreate(SubscriptionBase):

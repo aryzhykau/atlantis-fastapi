@@ -1,6 +1,8 @@
 from enum import Enum
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Date, Enum as SQLEnum, DateTime, Numeric
+
+from sqlalchemy import Column, Integer, ForeignKey, Enum as SQLEnum, DateTime, Numeric
 from sqlalchemy.orm import relationship
+
 from app.database import Base
 
 
@@ -19,5 +21,7 @@ class Invoice(Base):
     invoice_type = Column(SQLEnum(InvoiceTypeEnum, name="invoice_type_enum"), nullable=False)
     created_at = Column(DateTime, nullable=False)
     paid_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="invoices")
 
 #

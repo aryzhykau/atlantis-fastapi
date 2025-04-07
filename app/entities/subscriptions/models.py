@@ -9,6 +9,7 @@ class Subscription(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     active = Column(Boolean, nullable=False, default=True)
     title = Column(String(255), nullable=False, unique=True)
+    duration = Column(Integer, nullable=False)
     total_sessions = Column(Integer, nullable=False)
     price = Column(DECIMAL(10, 2), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

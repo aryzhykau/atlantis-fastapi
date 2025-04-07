@@ -1,4 +1,3 @@
-from sqlalchemy.exc import NoResultFound
 from datetime import datetime
 
 from sqlalchemy.exc import NoResultFound
@@ -29,7 +28,6 @@ def create_training_with_clients(db: Session, training_data: TrainingWithClients
         training_client = TrainingClient(
             training_id=new_training.id,
             client_id=client.client_id,
-            invoice_id=client.invoice_id,
             covered_by_subscription=client.covered_by_subscription,
             trial_training=client.trial_training,
         )

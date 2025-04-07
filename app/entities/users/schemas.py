@@ -1,6 +1,10 @@
 import datetime
 from typing import Optional
+
 from pydantic import BaseModel, EmailStr
+
+from app.entities.invoices.schemas import InvoiceRead
+
 
 # Базовая схема пользователя
 class UserBase(BaseModel):
@@ -27,11 +31,24 @@ class ClientBase(UserBase):
 class ClientCreate(ClientBase):
     pass
 
+class ClientSubscriptionCreate(BaseModel):
+    subscription_id: int
+    client_id: int
+    active: bool = True
+    start_date: datetime.datetime
+    end_date: datetime.datetime
 
+class ClientSubscriptionRead(ClientSubscriptionCreate):
+    id: int
+
+
+    sessions_left: int
+    model_config = {"from_attributes": True}
 
 class ClientRead(ClientBase):
     id: int
     created_at: datetime.datetime
+    invoices: list[InvoiceRead]= []
     model_config = {"from_attributes": True}
 
 class ClientUpdate(ClientRead):

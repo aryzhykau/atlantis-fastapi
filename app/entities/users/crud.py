@@ -7,9 +7,10 @@ from pydantic import EmailStr
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.entities.subscriptions.models import Subscription
 from app.entities.users.models import User
 from app.entities.users.models import UserRoleEnum
-from app.entities.users.schemas import ClientRead, ClientCreate, TrainerCreate, TrainerRead
+from app.entities.users.schemas import ClientRead, ClientCreate, TrainerCreate, TrainerRead, ClientSubscriptionCreate
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,19 @@ def delete_user_by_id(db: Session, user_id: int):
     db.commit()
 
     return {"message": "Пользователь успешно удален"}
+
+
+
+def create_client_subscription(db: Session, client_subscription_data: ClientSubscriptionCreate):
+    client = db.query(User).filter(User.id == client_subscription_data.client_id).first()
+    subscription = db.query(Subscription).filter(Subscription.id == client_subscription_data.subscription_id).first()
+    if not client or not subscription:
+        return None
+
+    client.subscriptions.append(subscription)
+    db.commit()
+    return client
+
 
 
 
