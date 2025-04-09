@@ -4,6 +4,7 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr
 
 from app.entities.invoices.schemas import InvoiceRead
+from app.entities.subscriptions.schemas import SubscriptionRead
 
 
 # Базовая схема пользователя
@@ -38,22 +39,18 @@ class ClientSubscriptionCreate(BaseModel):
     start_date: datetime.datetime
     end_date: datetime.datetime
 
-class ClientSubscriptionRead(ClientSubscriptionCreate):
-    id: int
 
 
-    sessions_left: int
-    model_config = {"from_attributes": True}
 
 class ClientRead(ClientBase):
     id: int
     created_at: datetime.datetime
+    subscriptions: list[SubscriptionRead]= []
     invoices: list[InvoiceRead]= []
     model_config = {"from_attributes": True}
 
 class ClientUpdate(ClientRead):
     pass
-
 
 # Схема администратора
 class AdminBase(UserBase):

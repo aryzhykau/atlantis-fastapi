@@ -31,6 +31,7 @@ class User(Base):
     birth_date = Column(DateTime(timezone=True), nullable=True)
     google_authenticated = Column(Boolean, default=True)
     notifications_enabled = Column(Boolean, default=True)
+    subscriptions = relationship("Subscription", secondary="client_subscriptions", back_populates="client")
 
     role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"
     ), nullable=False)  # Может быть "admin", "client", "trainer"
@@ -48,6 +49,7 @@ class ClientSubscription(Base):
     active = Column(Boolean, nullable=False, default=True)
     sessions_left = Column(Integer, nullable=True)
     invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True)
+
 
     def __repr__(self):
         return f"<ClientSubscription(id={self.id}, client_id={self.client_id}, subscription_id={self.subscription_id}, " \
