@@ -19,6 +19,7 @@ class Invoice(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
     invoice_type = Column(SQLEnum(InvoiceTypeEnum, name="invoice_type_enum"), nullable=False)
+    # client_subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
     created_at = Column(DateTime, nullable=False)
     paid_at = Column(DateTime, nullable=True)
 

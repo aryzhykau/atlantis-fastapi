@@ -42,6 +42,7 @@ class ClientSubscriptionCreate(BaseModel):
 
 class ClientSubscriptionRead(BaseModel):
     active: bool
+    is_active: bool
     start_date: datetime.datetime
     end_date: datetime.datetime
     id: int

@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./atlantis-frontend/atlantis-typescript
+    ports: 
+      - "5173:5173"
+    volumes:
+      - ./atlantis-frontend/atlantis-typescript:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    command: ["npm", "run", "dev", "--", "--host"]
+
+  backendmigrations:
+    build: ./atlantis-fastapi
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@db:5432/mydatabase
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["domigrations"]
+    restart: "no"
+
+  backend:
+    build: ./atlantis-fastapi
+    ports: 
+      - "8000:8000"
+    volumes:
+      - ./atlantis-fastapi:/app
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@db:5432/mydatabase
+    depends_on:
+      - backendmigrations
+    command: ["startapp"]
+
+  db:
+    image: postgres:13
+    container_name: postgres 
+    environment:
+      POSTGRES_USER: myuser            
+      POSTGRES_PASSWORD: mypassword    
+      POSTGRES_DB: mydatabase         
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data  
+    ports:
+      - "5433:5432"  
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "myuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+
+# Том для хранения данных PostgreSQL
+volumes:
+  postgres_data:
+
+

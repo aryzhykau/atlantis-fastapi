@@ -1,8 +1,8 @@
 from enum import Enum
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum, ForeignKey, and_, \
-    Index
-from sqlalchemy.orm import relationship
+    func
+from sqlalchemy.orm import relationship, column_property
 
 from app.database import Base
 
@@ -27,14 +27,9 @@ class ClientSubscription(Base):
     client = relationship("User", backref="subscriptions")
     subscription = relationship("Subscription", backref="client_subscriptions")
 
-    __table_args__ = (
-        Index(
-            'uq_client_active_subscription',  # Index name
-            'client_id',  # Column to enforce for uniqueness
-            unique=True,  # Ensure uniqueness
-            postgresql_where=(active == True)  # Apply uniqueness only when active=True
-        ),
-    )
+    is_active = column_property(end_date >= func.now())
+
+
 
     def __repr__(self):
         return f"<ClientSubscription(id={self.id}, client_id={self.client_id}, subscription_id={self.subscription_id}, " \
@@ -64,7 +59,7 @@ class User(Base):
     notifications_enabled = Column(Boolean, default=True)
     active_subscription = relationship("ClientSubscription", primaryjoin=and_(
             id == ClientSubscription.client_id,  # Join condition
-            ClientSubscription.active == True  # Fetch only where active=True
+            ClientSubscription.is_active == True # Fetch only where active=True
         ),
         lazy="select",  # Load the relationship lazily when accessed
         uselist=False)
