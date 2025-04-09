@@ -18,6 +18,14 @@ if config.config_file_name is not None:
 from app.database import Base
 
 target_metadata = Base.metadata
+from app.entities.users.models import User
+from app.entities.trainings.models import Training
+from app.entities.training_types.models import TrainingType
+from app.entities.invoices.models import Invoice
+from app.entities.subscriptions.models import Subscription
+from app.entities.users.models import ClientSubscription
+from app.entities.payments.models import Payment
+from app.entities.relations_models.invoice_payments import InvoicePayments
 
 
 # other values from the config, defined by the needs of env.py,

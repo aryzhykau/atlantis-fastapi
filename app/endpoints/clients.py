@@ -7,16 +7,16 @@ from sqlalchemy.orm import Session
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
 from app.entities.users.crud import create_user, delete_user_by_id, \
-    get_all_users_by_role, update_user
+    get_all_users_by_role, update_user, create_client_subscription
 from app.entities.users.models import UserRoleEnum
-from app.entities.users.schemas import ClientCreate, ClientRead
+from app.entities.users.schemas import ClientCreate, ClientRead, ClientSubscriptionCreate
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
 # Получить всех клиентов
-@router.get("/", response_model=List[Any])
+@router.get("/", response_model=List[ClientRead])
 def get_clients(current_user: dict = Depends(verify_jwt_token),db: Session = Depends(get_db)):
     if current_user["role"] == UserRoleEnum.ADMIN:
         logger.debug("Authorised for clients request")
@@ -60,8 +60,20 @@ def delete_client(client_id: int, current_user: dict = Depends(verify_jwt_token)
 def update_client(client_id: int, client_data: ClientCreate, current_user: dict = Depends(verify_jwt_token),
                   db: Session = Depends(get_db)):
     if current_user["role"] == UserRoleEnum.ADMIN:
-        client_to_update = update_user(db,client_id, client_data)
+        client_to_update = update_user(db, client_id, client_data)
         logger.debug(client_to_update)
         return client_to_update
     else:
         raise HTTPException(status_code=403, detail="Unauthorized")
+
+
+# Добавить подписку клиенту
+@router.post("/{client_id}/subscriptions")
+def add_subscription_to_client(client_id: int, client_subscription_data: ClientSubscriptionCreate, current_user: dict = Depends(verify_jwt_token),
+                               db: Session = Depends(get_db)):
+    if current_user["role"] == UserRoleEnum.ADMIN:
+        logger.debug(f"Adding subscription to client with id: {client_id}")
+        subscription = create_client_subscription(db, client_id, client_subscription_data)
+        if not subscription:
+            raise HTTPException(status_code=404, detail="Client or Subscription not found")
+        return {"message": "Subscription successfully added", "client_id": client_id}

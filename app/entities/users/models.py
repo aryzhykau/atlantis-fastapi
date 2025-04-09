@@ -1,7 +1,9 @@
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum, ForeignKey, Date, and_, \
+    UniqueConstraint
 from sqlalchemy.orm import relationship
+from app.entities.invoices.models import Invoice
 
 from app.database import Base
 
@@ -10,6 +12,29 @@ class UserRoleEnum(str, Enum):  # Наследуем str, чтобы храни�
     CLIENT = "CLIENT"
     TRAINER = "TRAINER"
     ADMIN = "ADMIN"
+
+
+class ClientSubscription(Base):
+    __tablename__ = 'client_subscriptions'
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    subscription_id = Column(Integer, ForeignKey('subscriptions.id'), nullable=False)
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=False)
+    active = Column(Boolean, nullable=False, default=True, )
+    sessions_left = Column(Integer, nullable=True)
+    invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True)
+    client = relationship("User", backref="subscriptions")
+    subscription = relationship("Subscription", backref="client_subscriptions")
+
+
+
+def __repr__(self):
+        return f"<ClientSubscription(id={self.id}, client_id={self.client_id}, subscription_id={self.subscription_id}, " \
+               f"start_date={self.start_date}, end_date={self.end_date}, active={self.active}, " \
+               f"sessions_left={self.sessions_left}, invoice_id={self.invoice_id})>"
+
 
 
 
@@ -31,29 +56,16 @@ class User(Base):
     birth_date = Column(DateTime(timezone=True), nullable=True)
     google_authenticated = Column(Boolean, default=True)
     notifications_enabled = Column(Boolean, default=True)
-    subscriptions = relationship("Subscription", secondary="client_subscriptions", back_populates="client")
+    active_subscription = relationship("ClientSubscription", primaryjoin=and_(
+            id == ClientSubscription.client_id,  # Join condition
+            ClientSubscription.active == True  # Fetch only where active=True
+        ),
+        lazy="select",  # Load the relationship lazily when accessed
+        uselist=False)
+
 
     role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"
     ), nullable=False)  # Может быть "admin", "client", "trainer"
 
     invoices = relationship("Invoice", back_populates="user")
-
-class ClientSubscription(Base):
-    __tablename__ = 'client_subscriptions'
-
-    id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    subscription_id = Column(Integer, ForeignKey('subscriptions.id'), nullable=False)
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=False)
-    active = Column(Boolean, nullable=False, default=True)
-    sessions_left = Column(Integer, nullable=True)
-    invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True)
-
-
-    def __repr__(self):
-        return f"<ClientSubscription(id={self.id}, client_id={self.client_id}, subscription_id={self.subscription_id}, " \
-               f"start_date={self.start_date}, end_date={self.end_date}, active={self.active}, " \
-               f"sessions_left={self.sessions_left}, invoice_id={self.invoice_id})>"
-
 

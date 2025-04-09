@@ -33,19 +33,28 @@ class ClientCreate(ClientBase):
     pass
 
 class ClientSubscriptionCreate(BaseModel):
+
     subscription_id: int
-    client_id: int
     active: bool = True
+    start_date: datetime.datetime = datetime.datetime.now()
+    end_date: Optional[datetime.datetime] = None
+
+
+class ClientSubscriptionRead(BaseModel):
+    active: bool
     start_date: datetime.datetime
     end_date: datetime.datetime
-
+    id: int
+    sessions_left: int
+    subscription: SubscriptionRead
+    model_config = {"from_attributes": True}
 
 
 
 class ClientRead(ClientBase):
     id: int
     created_at: datetime.datetime
-    subscriptions: list[SubscriptionRead]= []
+    active_subscription: Optional[ClientSubscriptionRead] = None
     invoices: list[InvoiceRead]= []
     model_config = {"from_attributes": True}
 

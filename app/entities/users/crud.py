@@ -1,14 +1,14 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Union
 
 from fastapi import HTTPException
 from pydantic import EmailStr
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.entities.subscriptions.models import Subscription
-from app.entities.users.models import User
+from app.entities.users.models import User, ClientSubscription
 from app.entities.users.models import UserRoleEnum
 from app.entities.users.schemas import ClientRead, ClientCreate, TrainerCreate, TrainerRead, ClientSubscriptionCreate
 
@@ -81,7 +81,7 @@ def update_user(db: Session, user_id: int, user_updates: Union[ClientCreate, Tra
 
 
 def get_all_users_by_role(db: Session, role: UserRoleEnum):
-    users = db.query(User).filter(User.role == role.value).order_by(User.last_name, User.first_name).all()
+    users = db.query(User).filter(User.role == role.value).options(joinedload(User.active_subscription)).order_by(User.last_name, User.first_name).all()
     logger.debug(users)
     if role == UserRoleEnum.CLIENT:
         schema = ClientRead
@@ -89,6 +89,7 @@ def get_all_users_by_role(db: Session, role: UserRoleEnum):
         schema = TrainerRead
     else:
         raise ValueError(f"Unsupported role: {role}")
+    logger.debug(users)
     return [schema.model_validate(user) for user in users] if users else []
 
 def get_users_by_role_paginated(db: Session, role: UserRoleEnum, page: int = 1, page_size: int = 10, ):
@@ -127,15 +128,29 @@ def delete_user_by_id(db: Session, user_id: int):
 
 
 
-def create_client_subscription(db: Session, client_subscription_data: ClientSubscriptionCreate):
-    client = db.query(User).filter(User.id == client_subscription_data.client_id).first()
+def create_client_subscription(db: Session, client_id: int, client_subscription_data: ClientSubscriptionCreate):
+    client = db.query(User).filter(User.id == client_id).first()
+
     subscription = db.query(Subscription).filter(Subscription.id == client_subscription_data.subscription_id).first()
     if not client or not subscription:
         return None
 
-    client.subscriptions.append(subscription)
+    client_subscription = ClientSubscription(
+        client_id=client_id,
+        subscription_id = client_subscription_data.subscription_id,
+        start_date = client_subscription_data.start_date,
+        end_date=client_subscription_data.start_date + timedelta(days=subscription.duration),
+        active=client_subscription_data.active,
+        sessions_left=subscription.total_sessions,
+        invoice_id = None #TODO add invoice creation logic
+
+    )
+
+    db.add(client_subscription)
     db.commit()
-    return client
+    db.refresh(client_subscription)
+    return client_subscription
+
 
 
 
