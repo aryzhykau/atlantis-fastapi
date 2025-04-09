@@ -42,7 +42,7 @@ def upgrade() -> None:
         ).bindparams(
             email="stadnykyuliia78@gmail.com",
             first_name="Юлия",
-            last_name="Стадние",
+            last_name="Стадник",
             phone="+421940597866",
             role="ADMIN",  # Убедись, что это правильное значение в БД
             google_authenticated=True
