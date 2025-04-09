@@ -1,19 +1,19 @@
 version: '3.8'
 
 services:
-  frontend:
-    build: ./atlantis-frontend/atlantis-typescript
-    ports: 
-      - "5173:5173"
-    volumes:
-      - ./atlantis-frontend/atlantis-typescript:/app
-      - /app/node_modules
-    environment:
-      - NODE_ENV=development
-      - VITE_API_URL=http://backend:8000
-    depends_on:
-      - backend
-    command: ["npm", "run", "dev", "--", "--host"]
+#  frontend:
+#    build: ./atlantis-frontend/atlantis-typescript
+#    ports:
+#      - "5173:5173"
+#    volumes:
+#      - ./atlantis-frontend/atlantis-typescript:/app
+#      - /app/node_modules
+#    environment:
+#      - NODE_ENV=development
+#      - VITE_API_URL=http://backend:8000
+#    depends_on:
+#      - backend
+#    command: ["npm", "run", "dev", "--", "--host"]
 
   backendmigrations:
     build: ./atlantis-fastapi
