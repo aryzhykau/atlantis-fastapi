@@ -36,7 +36,7 @@ class ClientSubscriptionCreate(BaseModel):
 
     subscription_id: int
     active: bool = True
-    start_date: datetime.datetime = datetime.datetime.now()
+    start_date: datetime.datetime = datetime.datetime.today()
     end_date: Optional[datetime.datetime] = None
 
 
