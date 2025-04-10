@@ -3,7 +3,6 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr
 
-from app.entities.invoices.schemas import InvoiceRead
 from app.entities.subscriptions.schemas import SubscriptionRead
 
 
@@ -56,7 +55,6 @@ class ClientRead(ClientBase):
     id: int
     created_at: datetime.datetime
     active_subscription: Optional[ClientSubscriptionRead] = None
-    invoices: list[InvoiceRead]= []
     model_config = {"from_attributes": True}
 
 class ClientUpdate(ClientRead):

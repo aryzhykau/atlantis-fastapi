@@ -68,5 +68,5 @@ class User(Base):
     role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"
     ), nullable=False)  # Может быть "admin", "client", "trainer"
 
-    invoices = relationship("Invoice", back_populates="user")
+
 

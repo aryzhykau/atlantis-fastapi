@@ -146,6 +146,7 @@ def create_client_subscription(db: Session, client_id: int, client_subscription_
 
     )
 
+
     db.add(client_subscription)
     db.commit()
     db.refresh(client_subscription)

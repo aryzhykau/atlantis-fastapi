@@ -36,6 +36,7 @@ def verify_jwt_token(token: str = Depends(oauth2_scheme_access)):
         if token_exp_time < current_time:
             raise HTTPException(status_code=401, detail="Token has expired")
 
+        logger.debug(f"Token payload: {payload}")
         # Return payload details (like email, role, id) on success
         return {"email": payload["sub"], "role": payload["role"], "id": payload["id"]}
 
