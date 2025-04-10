@@ -142,8 +142,6 @@ def create_client_subscription(db: Session, client_id: int, client_subscription_
         end_date=client_subscription_data.start_date + timedelta(days=subscription.duration),
         active=client_subscription_data.active,
         sessions_left=subscription.total_sessions,
-        invoice_id = None #TODO add invoice creation logic
-
     )
 
 
