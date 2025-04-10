@@ -23,7 +23,6 @@ class ClientSubscription(Base):
     end_date = Column(DateTime(timezone=True), nullable=False)
     active = Column(Boolean, nullable=False, default=True, )
     sessions_left = Column(Integer, nullable=True)
-    invoice_id = Column(Integer, ForeignKey('invoices.id'), nullable=True)
     client = relationship("User", backref="subscriptions")
     subscription = relationship("Subscription", backref="client_subscriptions")
 
