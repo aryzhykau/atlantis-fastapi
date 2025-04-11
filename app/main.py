@@ -14,7 +14,7 @@ from app.entities.training_types.endpoints import router as training_types_route
 from app.entities.trainings.endpoints import router as trainings_router
 
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("sqlalchemy").setLevel(logging.DEBUG)
+# logging.getLogger("sqlalchemy").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 

@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
 import os
+
+from pydantic_settings import BaseSettings
 
 
 class Config(BaseSettings):
@@ -16,7 +17,7 @@ class Config(BaseSettings):
     GOOGLE_DISCOVERY_URL: str = os.getenv("GOOGLE_DISCOVERY_URL", "")
 
     class Config:
-        env_file = '.env'
+        env_file = os.getenv("ENV_FILE", ".env")
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:

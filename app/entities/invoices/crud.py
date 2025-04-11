@@ -25,9 +25,10 @@ def create_invoice(db: Session, invoice: InvoiceCreate):
         raise e
 
 
-def get_all_invoices(db: Session, only_unpaid: bool = False, user_id: Optional[int] = None):
+def get_all_invoices(db: Session, user_id: Optional[int] = None, only_unpaid: bool = False):
     try:
         invoices = db.query(Invoice)
+        logger.debug(f"{user_id}, {only_unpaid}")
         filters = []
         if user_id:
             filters.append(Invoice.user_id == user_id)

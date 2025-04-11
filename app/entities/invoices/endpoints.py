@@ -20,7 +20,7 @@ def get_invoices(
         current_user = Depends(verify_jwt_token),
         db: Session = Depends(get_db),
 ):
-    logger.debug("Current user = "+current_user["role"])
+    logger.debug(f"{only_unpaid, user_id}")
     if current_user["role"] == UserRoleEnum.ADMIN:
         invoices = get_all_invoices(db, user_id, only_unpaid)
         return [InvoiceRead.model_validate(invoice) for invoice in invoices]
