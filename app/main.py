@@ -29,6 +29,12 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
+@app.get("/healthz")
+async def healthz():
+    return {"message": "Healthy!"}
+
+
 # Регистрация маршрутов
 app.include_router(auth_router, prefix="/auth")
 app.include_router(users_router, prefix="/users", tags=["users"])
