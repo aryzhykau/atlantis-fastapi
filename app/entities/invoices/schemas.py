@@ -10,6 +10,7 @@ from app.entities.users.schemas import ClientRead
 class InvoiceCreate(BaseModel):
     user_id: int
     invoice_type: InvoiceTypeEnum
+    created_at: Optional[datetime.datetime] = None
     amount: int
     client_subscription_id: Optional[int] = None
 
@@ -18,7 +19,7 @@ class InvoiceRead(BaseModel):
     amount: int
     invoice_type: InvoiceTypeEnum
     user: ClientRead
-    client_subscription_id: int
+    client_subscription_id: Optional[int] = None
     created_at: datetime.datetime
     paid_at: Optional[datetime.datetime] = None
 

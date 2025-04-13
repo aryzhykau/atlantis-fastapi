@@ -1,12 +1,12 @@
 import datetime
 
 from pydantic import BaseModel
-from typing import Optional
 
 
 class TrainingTypeBase(BaseModel):
     title: str # Название типа тренировки
     require_subscription: bool
+    color: str
     price: int
 
 

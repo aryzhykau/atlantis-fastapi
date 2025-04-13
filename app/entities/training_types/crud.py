@@ -53,7 +53,10 @@ def delete_training_type(db: Session, training_type_id: int):
 
 
 def get_training_type_by_id(db: Session, training_type_id: int):
-    return db.query(TrainingType).filter(TrainingType.id == training_type_id).first()
+    training_type = db.query(TrainingType).get(training_type_id)
+    if not training_type:
+        raise ValueError(f"Тип тренировки с ID {training_type_id} не существует.")
+    return training_type
 
 
 def get_training_types(db: Session):

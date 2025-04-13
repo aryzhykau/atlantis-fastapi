@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 def create_invoice(db: Session, invoice: InvoiceCreate):
     try:
         new_invoice = invoice.model_dump()
-        new_invoice["created_at"] = datetime.datetime.now()
+        if new_invoice["created_at"] is None:
+            new_invoice["created_at"] = datetime.datetime.now()
 
         db_invoice = Invoice(**new_invoice)
         db.add(db_invoice)

@@ -20,8 +20,8 @@ def get_user_by_email(db: Session, email: EmailStr):
     return db.query(User).filter(User.email == email).first()
 
 
-def get_user_by_id(db: Session, id: int):
-    return db.query(User).filter(User.id == id).first()
+def get_user_by_id(db: Session, user_role: UserRoleEnum, id: int):
+    return db.query(User).filter(User.id == id and User.role == user_role).first()
 
 
 

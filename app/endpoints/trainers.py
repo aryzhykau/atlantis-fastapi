@@ -1,14 +1,14 @@
 import logging
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.entities.users.crud import create_user, get_users_by_role_paginated, get_all_users_by_role
+from app.entities.users.crud import create_user, get_all_users_by_role, get_user_by_id
 from app.entities.users.models import User, UserRoleEnum
 from app.entities.users.schemas import TrainerCreate, TrainerRead
-from typing import List
 
 router = APIRouter()
 
@@ -22,6 +22,15 @@ def get_trainers(current_user: dict = Depends(verify_jwt_token), db: Session = D
     if current_user["role"] == UserRoleEnum.ADMIN:
         logger.debug("Authorised for clients request")
     return get_all_users_by_role(db, UserRoleEnum.TRAINER)
+
+@router.get("/{trainer_id}", response_model=TrainerRead)
+def get_trainers(trainer_id, current_user: dict = Depends(verify_jwt_token), db: Session = Depends(get_db)):
+    if current_user["role"] == UserRoleEnum.ADMIN:
+        logger.debug("Authorised for clients request")
+        return get_user_by_id(db, UserRoleEnum.TRAINER, trainer_id)
+    else:
+        raise HTTPException(403, "Forbidden")
+
 
 
 @router.delete("/{trainer_id}")
