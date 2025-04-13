@@ -43,7 +43,6 @@ class TrainingClientObjectRead(BaseModel):
 class TrainingClientRead(BaseModel):
     trial_training: bool
     invoice_id: Optional[int]
-    is_birthday: bool
     client: TrainingClientObjectRead
 
     model_config = {"from_attributes": True}

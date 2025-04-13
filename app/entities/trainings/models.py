@@ -41,41 +41,6 @@ class TrainingClient(Base):
     client = relationship("User", backref="training_clients")
     training = relationship("Training", back_populates="clients")
 
-    @property
-    def is_birthday(self) -> bool:
-        """Determines if the client's birthday matches the training date."""
-        if not self.client or not self.training:
-            logger.warning("Either client or training is missing.")
-            return False  # Client or training data is incomplete
-
-        training_date = self.training.training_datetime
-        birth_date = self.client.birth_date
-
-        if not birth_date or not training_date:
-            logger.warning("Either training_datetime or birth_date is missing.")
-            return False  # Missing required fields
-
-        if training_date.tzinfo is None or birth_date.tzinfo is None:
-            logger.warning("Missing timezone information for training_datetime or birth_date.")
-            return False  # Handle cases where time zone information is invalid
-
-        try:
-            # Convert training and birth dates to local time zones
-            logger.debug(f"Birth date: {birth_date}, Training date: {training_date}")
-            training_date_local = training_date.date()
-            birth_date_local = birth_date.date()
-
-
-            # Compare only day and month
-            is_match = birth_date_local.month == training_date_local.month and birth_date_local.day == training_date_local.day
-            logger.info(f"Is birthday: {is_match}")
-            return is_match
-
-        except Exception as e:
-            logger.error(f"Не удалось проверить день рождения, он будет установлен как fasle: {e}")
-            return False  # Catch any unexpected errors and fail gracefully
-
-
 
     __table_args__ = (
             UniqueConstraint('training_id', 'client_id', name='unique_training_client'),
