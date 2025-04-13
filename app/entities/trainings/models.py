@@ -61,8 +61,8 @@ class TrainingClient(Base):
 
         try:
             # Convert training and birth dates to local time zones
-            training_date_local = training_date.astimezone
-            birth_date_local = birth_date.astimezone()
+            training_date_local = training_date.astimezone(training_date.tzinfo.utcoffset(training_date))
+            birth_date_local = birth_date.astimezone(birth_date.tzinfo.utcoffset(birth_date))
             logger.debug(f"Birth date: {birth_date_local}, Training date: {training_date_local}")
 
             # Compare only day and month
