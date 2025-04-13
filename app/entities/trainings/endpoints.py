@@ -29,8 +29,7 @@ def get_trainings(
     Возвращает список тренировок текущего пользователя (тренера или клиента).
     """
 
-    logger.debug(start_week)
-    logger.debug(end_week)
+
 
     if current_user["role"] == UserRoleEnum.ADMIN:
         trainings = get_all_trainings(db, trainer_id=trainer_id, start_week=start_week, end_week=end_week)
