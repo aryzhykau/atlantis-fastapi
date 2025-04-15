@@ -54,6 +54,7 @@ class TrainingWithClientsRead(BaseModel):
     trainer_id: int
     training_type_id: int
     training_datetime: datetime
+    created_at: datetime
     clients: List[TrainingClientRead]
     model_config = {"from_attributes": True}
 

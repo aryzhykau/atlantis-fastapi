@@ -25,6 +25,7 @@ class UserAuthInfo(UserBase):
 class ClientBase(UserBase):
     whatsapp: Optional[str] = None
     parent_name: Optional[str] = None
+    has_trial: Optional[bool] = True
     active: Optional[bool] = True
     birth_date: datetime.datetime
 
@@ -35,6 +36,7 @@ class ClientSubscriptionCreate(BaseModel):
 
     subscription_id: int
     active: bool = True
+    balance: int = 0
     start_date: datetime.datetime = datetime.datetime.today()
     end_date: Optional[datetime.datetime] = None
 
@@ -54,6 +56,8 @@ class ClientSubscriptionRead(BaseModel):
 class ClientRead(ClientBase):
     id: int
     created_at: datetime.datetime
+    has_trial: bool
+    balance: int
     active_subscription: Optional[ClientSubscriptionRead] = None
     model_config = {"from_attributes": True}
 

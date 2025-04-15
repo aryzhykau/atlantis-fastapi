@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings
 
 
 class Config(BaseSettings):
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
+    DEV_ADMIN_EMAIL: str = os.getenv("DEV_ADMIN_EMAIL", "rorychan0697@gmail.com")
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost:5432")
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "<PASSWORD>")

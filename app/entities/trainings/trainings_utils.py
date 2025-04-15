@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.entities.invoices.models import InvoiceTypeEnum
@@ -11,7 +12,7 @@ from app.entities.trainings.errors import (
     ClientSubscriptionError
 )
 from app.entities.trainings.models import Training, TrainingClient
-from app.entities.users.models import ClientSubscription
+from app.entities.users.models import ClientSubscription, User
 
 
 def check_trainer_availability(db: Session, trainer_id: int, training_datetime: datetime):
@@ -42,13 +43,15 @@ def check_client_training_time_overlap(db: Session, client_id: int, training_dat
 
 
 
-def check_client_subscription(db: Session, client_id: int):
+def check_client_subscription_and_trial(db: Session, client_id: int):
     active_subscription = db.query(ClientSubscription).filter_by(
         client_id=client_id,
         active=True
     ).first()
-    if not active_subscription:
+    trial = db.query(User).filter_by(has_trial=True, id=client_id).first()
+    if not active_subscription and not trial:
         raise ClientSubscriptionError(client_id)
+
 
 
 
@@ -60,3 +63,21 @@ def generate_invoice(client_id: int, created_at: datetime, invoice_type: Invoice
         invoice_type=invoice_type,
         amount=amount,
     )
+
+def check_client_training_same_day(db: Session, client_id: int, training_datetime: datetime):
+    """
+    Проверяет, есть ли у клиента тренировочная запись на тот же день.
+    """
+    # Приведение даты тренировки к дню
+    training_date = training_datetime.date()
+
+    # Запрос, проверяющий тренировки клиента на тот же день
+    existing_training = db.query(Training).join(TrainingClient).filter(
+        TrainingClient.client_id == client_id,
+        func.date(Training.training_datetime) == training_date  # Сравнить только даты
+    ).first()
+
+    if existing_training:
+        raise ClientTimeConflictError(
+            f"Client {client_id} already has a training on {training_date}."
+        )

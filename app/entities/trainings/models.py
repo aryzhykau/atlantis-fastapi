@@ -35,11 +35,15 @@ class TrainingClient(Base):
     training_id = Column(Integer, ForeignKey("trainings.id"), nullable=False)
     client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    # is_attended = Column(Boolean, nullable=False, default=False, server_default="false")
+
+
 
     trial_training = Column(Boolean, nullable=False, default=False, server_default="false")
 
     client = relationship("User", backref="training_clients")
     training = relationship("Training", back_populates="clients")
+    # invoice = relationship("Invoice", backref="training_clients", lazy="joined")
 
 
     __table_args__ = (

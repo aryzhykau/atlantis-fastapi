@@ -38,7 +38,7 @@ class ClientSubscriptionError(TrainingError):
     """Ошибка, возникающая, если у клиента нет активной подписки, а она требуется."""
 
     def __init__(self, client_id: int):
-        super().__init__(f"Клиент {client_id} не имеет активной подписки.")
+        super().__init__(f"Клиент {client_id} не имеет активной подписки или пробного занятия.")
 
 
 class TrainingWithoutClientsError(TrainingError):
@@ -54,3 +54,5 @@ class TrainingWithoutTrainingTypeError(TrainingError):
 class TrainingClientIdMissingError(TrainingError):
     def __init__(self):
         super().__init__("Отсутствует поле ID у клиента")
+
+
