@@ -18,8 +18,8 @@ def create_invoice(db: Session, invoice: InvoiceCreate):
             new_invoice["created_at"] = datetime.datetime.now()
         db_client = db.query(User).filter(User.id == new_invoice["user_id"]).first()
         db_invoice = Invoice(**new_invoice)
-        if db_client.balance >= new_invoice.amount:
-            setattr(db_client, "balance", db_client.balance - new_invoice.amount)
+        if db_client.balance >= invoice.amount:
+            setattr(db_client, "balance", db_client.balance - invoice.amount)
             db_invoice.paid_at = datetime.now()
 
         db.add(db_invoice)
