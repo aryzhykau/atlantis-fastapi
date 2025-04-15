@@ -21,6 +21,7 @@ from app.entities.trainings.trainings_utils import (
 from .models import Training, TrainingClient
 from .schemas import TrainingWithClientsCreate, TrainingWithClientsRead
 from ..invoices.models import InvoiceTypeEnum
+from ..users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,10 @@ def create_training_with_clients(db: Session, training_data: TrainingWithClients
 
             if client.trial_training:
                 logger.debug("Creating trial invoice")
+                db_client = db.query(User).filter(User.id == client.client_id).first()
                 new_invoice = generate_invoice(client.client_id, training_data.training_datetime, InvoiceTypeEnum.TRIAL, 20)
                 db_invoice = create_invoice(db, new_invoice)
+                setattr(db_client, "has_trial", False)
 
 
             elif not training_type.require_subscription:
