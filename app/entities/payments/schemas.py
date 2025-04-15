@@ -1,6 +1,8 @@
-# from pydantic import BaseModel
-# from typing import Optional
-# from datetime import date
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
 # import enum
 #
 # class PaymentTypeEnum(str, enum.Enum):
@@ -11,22 +13,16 @@
 #     subscription_8 = "Абонемент на 8 занятий"
 #     subscription_extend = "Продление абонемента"
 #
-# class PaymentCreate(BaseModel):
-#     amount: float
-#     payment_type: PaymentTypeEnum
-#     date: date
-#     client_id: int
-#     coach_id: int
-#
-#     class Config:
-#         orm_mode = True
-#
-# class SubscriptionCreate(BaseModel):
-#     start_date: date
-#     end_date: date
-#     remaining_sessions: int
-#     client_id: int
-#     subscription_type: PaymentTypeEnum
-#
-#     class Config:
-#         orm_mode = True
+class PaymentCreate(BaseModel):
+    amount: float
+    payment_date: datetime
+    user_id: int
+
+
+
+class PaymentRead(BaseModel):
+    id: int
+    payment_date: datetime
+    user_id: int
+
+    model_config = {"from_attributes": True}

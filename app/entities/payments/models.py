@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date
+from sqlalchemy import Column, Integer, Float, ForeignKey
+from sqlalchemy import DateTime
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -10,9 +11,7 @@ class Payment(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Float)
-    payment_type = Column(String)  # "one_time", "trial", "subscription"
-    payment_date = Column(Date)
-
+    payment_date = Column(DateTime(timezone=True))
     client = relationship("User", backref="payments")
 
 

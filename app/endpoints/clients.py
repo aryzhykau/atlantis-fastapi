@@ -9,6 +9,8 @@ from app.dependencies import get_db
 from app.entities.invoices.crud import create_invoice
 from app.entities.invoices.models import InvoiceTypeEnum
 from app.entities.invoices.schemas import InvoiceCreate, InvoiceRead
+from app.entities.payments.crud import get_payments
+from app.entities.payments.schemas import PaymentRead
 from app.entities.users.crud import create_user, delete_user_by_id, \
     get_all_users_by_role, update_user, create_client_subscription
 from app.entities.users.models import UserRoleEnum
@@ -93,3 +95,11 @@ def add_subscription_to_client(client_id: int, client_subscription_data: ClientS
         if not subscription:
             raise HTTPException(status_code=404, detail="Client or Subscription not found")
         return {"subscription": subscription_schema, "invoice": invoice_read_schema, "client_id": client_id}
+
+
+@router.get("/{client_id}/payments", response_model=list[PaymentRead])
+def get_client_payments(client_id: int, current_user: dict = Depends(verify_jwt_token), db: Session = Depends(get_db)):
+    if current_user["role"] == UserRoleEnum.ADMIN:
+        logger.debug(f"Getting payments for client with id: {client_id}")
+        payments = get_payments(db, client_id)
+        return [PaymentRead.model_validate(payment) for payment in payments]

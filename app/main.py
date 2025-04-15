@@ -8,6 +8,7 @@ from app.endpoints.clients import router as clients_router
 from app.endpoints.trainers import router as trainers_router
 from app.endpoints.users import router as users_router
 from app.entities.invoices.endpoints import router as invoices_router
+from app.entities.payments.endpoints import router as payments_router
 from app.entities.subscriptions.endpoints import subscriptions_router
 from app.entities.training_types.endpoints import router as training_types_router
 # from app.endpoints.admins import router as admins_router
@@ -44,4 +45,5 @@ app.include_router(trainings_router, prefix="/trainings", tags=["trainings"])
 app.include_router(training_types_router, prefix="/training_types", tags=["training_types"])
 app.include_router(subscriptions_router, prefix="/subscriptions", tags=["subscriptions"])
 app.include_router(invoices_router, prefix="/invoices", tags=["invoices"])
+app.include_router(payments_router, prefix="/payments", tags=["payments"])
 # app.include_router(admins_router, prefix="/admin", tags=["admins"])

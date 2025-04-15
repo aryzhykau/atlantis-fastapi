@@ -43,10 +43,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
+    email = Column(String, index=True)
     first_name = Column(String)
     last_name = Column(String)
-    phone = Column(String, unique=True, index=True)
+    phone = Column(String, index=True)
     whatsapp = Column(String, nullable=True)
     salary = Column(Integer, nullable=True)
     has_trial = Column(Boolean, nullable=True, default=None)
@@ -64,6 +64,7 @@ class User(Base):
         ),
         lazy="select",  # Load the relationship lazily when accessed
         uselist=False)
+    payments = relationship("Payments", backref="user")
 
 
     role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"
