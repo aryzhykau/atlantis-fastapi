@@ -20,7 +20,7 @@ def create_invoice(db: Session, invoice: InvoiceCreate):
         db_invoice = Invoice(**new_invoice)
         if db_client.balance >= invoice.amount:
             setattr(db_client, "balance", db_client.balance - invoice.amount)
-            db_invoice.paid_at = datetime.now()
+            db_invoice.paid_at = datetime.datetime.now()
 
         db.add(db_invoice)
 
