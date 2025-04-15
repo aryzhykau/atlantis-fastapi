@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.entities.invoices.models import Invoice
 from app.entities.invoices.schemas import InvoiceCreate
+from app.entities.users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,14 @@ def create_invoice(db: Session, invoice: InvoiceCreate):
         new_invoice = invoice.model_dump()
         if new_invoice["created_at"] is None:
             new_invoice["created_at"] = datetime.datetime.now()
-
+        db_client = db.query(User).filter(User.id == new_invoice["user_id"]).first()
         db_invoice = Invoice(**new_invoice)
+        if db_client.balance >= new_invoice.amount:
+            setattr(db_client, "balance", db_client.balance - new_invoice.amount)
+            db_invoice.paid_at = datetime.now()
+
         db.add(db_invoice)
+
         db.commit()
         db.refresh(db_invoice)
         return db_invoice

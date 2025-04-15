@@ -21,7 +21,6 @@ from app.entities.trainings.trainings_utils import (
 from .models import Training, TrainingClient
 from .schemas import TrainingWithClientsCreate, TrainingWithClientsRead
 from ..invoices.models import InvoiceTypeEnum
-from ..users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -67,23 +66,16 @@ def create_training_with_clients(db: Session, training_data: TrainingWithClients
                 # Если требуется подписка, проверяем активную подписку или триал
                 check_client_subscription_and_trial(db, client.client_id)
 
-            db_client = db.query(User).filter(User.id == client.client_id).first()
             if client.trial_training:
                 logger.debug("Creating trial invoice")
                 new_invoice = generate_invoice(client.client_id, training_data.training_datetime, InvoiceTypeEnum.TRIAL, 20)
                 db_invoice = create_invoice(db, new_invoice)
-                if db_client.balance >= new_invoice.amount:
-                    setattr(db_client, "balance", db_client.balance - new_invoice.amount)
-                    db_invoice.paid_at = datetime.now()
 
 
             elif not training_type.require_subscription:
                 logger.debug("Creating single invoice")
                 new_invoice = generate_invoice(client.client_id, training_data.training_datetime, InvoiceTypeEnum.SINGLE, training_type.price)
                 db_invoice = create_invoice(db, new_invoice)
-                if db_client.balance >= new_invoice.amount:
-                    setattr(db_client, "balance", db_client.balance - new_invoice.amount)
-                    db_invoice.paid_at = datetime.now()
             else:
                 logger.debug("No invoice needed")
                 db_invoice = None
