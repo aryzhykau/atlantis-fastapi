@@ -64,7 +64,7 @@ class User(Base):
         ),
         lazy="select",  # Load the relationship lazily when accessed
         uselist=False)
-    payments = relationship("Payments", backref="user")
+    payments = relationship("Payment", back_populates="client", lazy="joined")
 
 
     role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"

@@ -12,6 +12,6 @@ class Payment(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Float)
     payment_date = Column(DateTime(timezone=True))
-    client = relationship("User", backref="payments")
+    client = relationship("User", back_populates="payments")
 
 
