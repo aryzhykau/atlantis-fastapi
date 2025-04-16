@@ -11,17 +11,18 @@ from app.entities.invoices.models import InvoiceTypeEnum
 from app.entities.invoices.schemas import InvoiceCreate, InvoiceRead
 from app.entities.payments.crud import get_payments
 from app.entities.payments.schemas import PaymentRead
-from app.entities.users.crud import create_user, delete_user_by_id, \
-    get_all_users_by_role, update_user, create_client_subscription
+from app.entities.users.crud import create_client_user, \
+    get_all_users_by_role, update_user, create_client_user
 from app.entities.users.models import UserRoleEnum
-from app.entities.users.schemas import ClientCreate, ClientRead, ClientSubscriptionCreate, ClientSubscriptionRead
+from app.entities.users.schemas import ClientCreate, ClientRead, ClientSubscriptionCreate, ClientSubscriptionRead, \
+    ClientUserRead, ClientUserCreate
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
 # Получить всех клиентов
-@router.get("/", response_model=List[ClientRead])
+@router.get("/", response_model=List[ClientUserRead])
 def get_clients(current_user: dict = Depends(verify_jwt_token),db: Session = Depends(get_db)):
     if current_user["role"] == UserRoleEnum.ADMIN:
         logger.debug("Authorised for clients request")
@@ -42,12 +43,12 @@ def get_clients(current_user: dict = Depends(verify_jwt_token),db: Session = Dep
 #
 #
 # Создать клиента
-@router.post("/", response_model=ClientRead)
-def create_client(client_data: ClientCreate, current_user: dict = Depends(verify_jwt_token), db: Session = Depends(get_db)):
+@router.post("/", response_model=ClientUserRead)
+def create_client(client_data: ClientUserCreate, current_user: dict = Depends(verify_jwt_token), db: Session = Depends(get_db)):
     if current_user["role"] == UserRoleEnum.ADMIN:
         logger.debug(client_data)
         client_data.google_authenticated = True
-        new_client = create_user(db, client_data)
+        new_client = create_client_user(db, client_data)
         logger.debug(new_client)
         return new_client
 

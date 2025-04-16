@@ -12,7 +12,7 @@ from app.entities.trainings.errors import (
     ClientSubscriptionError, ClientSubscriptionSessionsError
 )
 from app.entities.trainings.models import Training, TrainingClient
-from app.entities.users.models import ClientSubscription, User
+from app.entities.users.models import  User
 
 
 def check_trainer_availability(db: Session, trainer_id: int, training_datetime: datetime):

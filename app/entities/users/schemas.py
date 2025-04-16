@@ -1,9 +1,73 @@
 import datetime
 from typing import Optional
-
 from pydantic import BaseModel, EmailStr
-
 from app.entities.subscriptions.schemas import SubscriptionRead
+from app.entities.users.models import UserRoleEnum
+from app.entities.clients.schemas import ClientCreate, ClientRead
+
+
+class UserRead(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    google_authenticated: bool = True
+    role: str
+
+    model_config = {"from_attributes": True}
+
+
+class ClientUserCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    balance: int = 0
+    birth_date: datetime.datetime
+    google_authenticated: bool = True
+    role: str = UserRoleEnum.CLIENT.value
+    is_client: bool = True
+    clients: list[ClientCreate]
+
+
+class ClientUserRead(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    balance: int = 0
+    birth_date: datetime.datetime
+    google_authenticated: bool = True
+    role: str = UserRoleEnum.CLIENT.value
+    is_client: bool = True
+    clients: list[ClientRead]
+
+    model_config = {"from_attributes": True}
+
+
+class TrainerUserCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    google_authenticated: bool = True
+    role: str = UserRoleEnum.TRAINER.value
+    active: bool = True
+    salary: int
+    fixed_salary: bool
+
+
+class TrainerUserRead(TrainerUserCreate):
+    id: int
+    created_at: datetime.datetime
+
+    model_config = {"from_attributes": True}
+
+
+
+
 
 
 # Базовая схема пользователя
@@ -53,16 +117,10 @@ class ClientSubscriptionRead(BaseModel):
 
 
 
-class ClientRead(ClientBase):
-    id: int
-    created_at: datetime.datetime
-    has_trial: bool
-    balance: int
-    active_subscription: Optional[ClientSubscriptionRead] = None
-    model_config = {"from_attributes": True}
 
-class ClientUpdate(ClientRead):
-    pass
+#
+# class ClientUpdate(ClientRead):
+#     pass
 
 # Схема администратора
 class AdminBase(UserBase):

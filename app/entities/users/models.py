@@ -1,4 +1,6 @@
 from enum import Enum
+
+from pydantic import EmailStr
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -10,9 +12,6 @@ class UserRoleEnum(str, Enum):  # Наследуем str, чтобы храни�
     ADMIN = "ADMIN"
 
 
-
-
-
 # Основная модель пользователя
 class User(Base):
     __tablename__ = "users"
@@ -21,6 +20,7 @@ class User(Base):
     email = Column(String, index=True)
     first_name = Column(String)
     last_name = Column(String)
+    birth_date = Column(DateTime(timezone=True), nullable=True)
     phone = Column(String, index=True)
     whatsapp = Column(String, nullable=True)
     salary = Column(Integer, nullable=True)
@@ -31,11 +31,7 @@ class User(Base):
     balance = Column(Integer, nullable=True)
     google_authenticated = Column(Boolean, default=True)
     notifications_enabled = Column(Boolean, default=True)
+    role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"), nullable=False)
+
     payments = relationship("Payment", back_populates="client", lazy="joined")
-
     clients = relationship("Client", back_populates="User")
-    role = Column(SQLEnum(UserRoleEnum, name="user_role_enum"
-    ), nullable=False)  # Может быть "admin", "client", "trainer"
-
-
-

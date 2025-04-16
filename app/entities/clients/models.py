@@ -19,12 +19,10 @@ class ClientSubscription(Base):
     is_active = column_property(end_date >= func.now())
 
 
-
     def __repr__(self):
         return f"<ClientSubscription(id={self.id}, client_id={self.client_id}, subscription_id={self.subscription_id}, " \
                f"start_date={self.start_date}, end_date={self.end_date}, active={self.active}, " \
                f"sessions_left={self.sessions_left}, invoice_id={self.invoice_id})>"
-
 
 
 class Client(Base):
@@ -36,6 +34,7 @@ class Client(Base):
     last_name = Column(String, nullable=False)
     has_trial = Column(Boolean, nullable=True, default=None)
     birth_date = Column(DateTime(timezone=True), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
