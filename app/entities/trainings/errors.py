@@ -40,6 +40,12 @@ class ClientSubscriptionError(TrainingError):
     def __init__(self, client_id: int):
         super().__init__(f"Клиент {client_id} не имеет активной подписки или пробного занятия.")
 
+class ClientSubscriptionSessionsError(TrainingError):
+    """Ошибка, возникающая, если у клиента нет активной подписки, а она требуется."""
+
+    def __init__(self, client_id: int):
+        super().__init__(f"У клиента {client_id} не осталось доступных по абонементу тренировок")
+
 
 class TrainingWithoutClientsError(TrainingError):
     def __init__(self):

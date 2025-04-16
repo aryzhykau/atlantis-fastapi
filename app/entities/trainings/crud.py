@@ -67,6 +67,7 @@ def create_training_with_clients(db: Session, training_data: TrainingWithClients
                 # Если требуется подписка, проверяем активную подписку или триал
                 check_client_subscription_and_trial(db, client.client_id)
 
+
             if client.trial_training:
                 logger.debug("Creating trial invoice")
                 db_client = db.query(User).filter(User.id == client.client_id).first()

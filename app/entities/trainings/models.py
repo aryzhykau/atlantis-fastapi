@@ -16,7 +16,6 @@ class Training(Base):
     training_type_id = Column(Integer, ForeignKey("training_types.id"), nullable=False)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
-
     trainer = relationship("User", backref="trainings")
     clients = relationship("TrainingClient", back_populates="training")
 
@@ -33,17 +32,14 @@ class TrainingClient(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     training_id = Column(Integer, ForeignKey("trainings.id"), nullable=False)
-    client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
-    # is_attended = Column(Boolean, nullable=False, default=False, server_default="false")
-
-
-
     trial_training = Column(Boolean, nullable=False, default=False, server_default="false")
-
     client = relationship("User", backref="training_clients")
+    user = relationship("User", backref="training_clients")
     training = relationship("Training", back_populates="clients")
-    # invoice = relationship("Invoice", backref="training_clients", lazy="joined")
+
 
 
     __table_args__ = (

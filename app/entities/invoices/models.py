@@ -20,6 +20,7 @@ class Invoice(Base):
     amount = Column(Numeric(10, 2), nullable=False)
     invoice_type = Column(SQLEnum(InvoiceTypeEnum, name="invoice_type_enum"), nullable=False)
     client_subscription_id = Column(Integer, ForeignKey("client_subscriptions.id"), nullable=True)
+    client_training_id = Column(Integer, ForeignKey("training_clients.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
     paid_at = Column(DateTime(timezone=True), nullable=True)
 

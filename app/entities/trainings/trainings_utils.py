@@ -9,7 +9,7 @@ from app.entities.trainings.errors import (
     TrainerBusyError,
     ClientAlreadyInTrainingError,
     ClientTimeConflictError,
-    ClientSubscriptionError
+    ClientSubscriptionError, ClientSubscriptionSessionsError
 )
 from app.entities.trainings.models import Training, TrainingClient
 from app.entities.users.models import ClientSubscription, User
@@ -46,11 +46,13 @@ def check_client_training_time_overlap(db: Session, client_id: int, training_dat
 def check_client_subscription_and_trial(db: Session, client_id: int):
     active_subscription = db.query(ClientSubscription).filter_by(
         client_id=client_id,
-        active=True
+        active=True,
     ).first()
     trial = db.query(User).filter_by(has_trial=True, id=client_id).first()
     if not active_subscription and not trial:
         raise ClientSubscriptionError(client_id)
+    if active_subscription.sessions_left < 0:
+        raise ClientSubscriptionSessionsError(client_id)
 
 
 

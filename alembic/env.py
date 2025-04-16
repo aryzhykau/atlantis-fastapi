@@ -19,6 +19,15 @@ from app.database import Base
 
 target_metadata = Base.metadata
 from app.config import Config
+from app.entities.users.models import User
+from app.entities.trainings.models import Training
+from app.entities.clients.models import Client, ClientSubscription
+from app.entities.invoices.models import Invoice
+from app.entities.training_types.models import TrainingType
+from app.entities.subscriptions.models import Subscription
+from app.entities.payments.models import Payment
+from app.entities.trainings.models import TrainingClient
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
