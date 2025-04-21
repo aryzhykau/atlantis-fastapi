@@ -27,7 +27,7 @@ def test_get_clients(client, create_test_client, auth_headers,):
     # Получаем список клиентов
     response = client.get("/clients/", headers=auth_headers)
     assert response.status_code == 200
-    assert len(response.json()["clients"]) > 0
+    assert len(response.json()) > 0
 
 
 def test_get_client_by_id(client, auth_headers, create_test_client):
