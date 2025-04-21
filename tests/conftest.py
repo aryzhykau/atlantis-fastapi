@@ -9,7 +9,7 @@ from app.main import app
 from app.database import Base
 from app.dependencies import get_db
 from app.models.user import UserRole
-from app.models import User, TrainingType, Subscription
+from app.models import User, TrainingType, Subscription, Student, StudentSubscription
 
 # URL для тестовой базы данных (SQLite в оперативной памяти)
 DATABASE_URL = "sqlite:///./test_database.db"

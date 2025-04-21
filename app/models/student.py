@@ -18,7 +18,7 @@ class Student(Base):
 
     # Связь many-to-many с абонементами через таблицу association
     subscriptions = relationship(
-        "Subscription", secondary="student_subscriptions", back_populates="students"
+        "Subscription", secondary="student_subscriptions", backref="students"
     )
 
     # Один активный абонемент
