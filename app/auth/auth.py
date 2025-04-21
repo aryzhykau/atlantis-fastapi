@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import create_access_token, create_refresh_token, refresh_access_token
 from app.dependencies import get_db
-from app.entities.users.crud import get_user_by_email  # Searching for a user in the DB
+from app.crud.user import get_user_by_email  # Searching for a user in the DB
 from app.utils.google import get_user_info_from_access_token  # Extract user info from Google
 
 
@@ -39,6 +39,7 @@ async def auth_google(authorization: str = Header(...), db: Session = Depends(ge
 
     # Check if user exists in the database
     user = get_user_by_email(db, email=user_data["email"])
+    logger.debug(f"User found in the database: {user}")
     if not user:
         raise HTTPException(status_code=403, detail="Access denied: user not found.")
 
