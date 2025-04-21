@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.models.user import UserRole
+from app.schemas.user import UserRole
 from app.schemas.student import StudentCreate, StudentResponse, StudentUpdate
 from app.crud.student import (create_student, get_students, get_student_by_id,
                               update_student)
