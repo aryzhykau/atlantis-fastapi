@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Date, Boolean, Enum, Float
-from sqlalchemy.orm import validates
+from sqlalchemy import Column, Integer, String, Date, Boolean, Enum, Float, DateTime
+from sqlalchemy.orm import validates, relationship
 from app.database import Base
 from enum import Enum as PyEnum
+from datetime import date, datetime
 
 
 # Роли пользователей
@@ -33,6 +34,12 @@ class User(Base):
     # Поле для всех пользователей
     is_active = Column(Boolean, default=True)
     is_authenticated_with_google = Column(Boolean, default=True)  # Аутентификация Google (по умолчанию TRUE)
+
+    # Поле статуса
+    deactivation_date = Column(DateTime, nullable=True)
+
+    # Relationships
+    real_trainings = relationship("RealTraining", back_populates="trainer")
 
     # Валидация: WhatsApp только для клиентов
     @validates("whatsapp_number")

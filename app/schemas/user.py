@@ -1,6 +1,8 @@
-from pydantic import BaseModel, EmailStr
-from datetime import date
+from pydantic import BaseModel, EmailStr, Field, validator, field_validator, model_validator
+from datetime import date, datetime
 from enum import Enum
+from app.schemas.student import StudentCreateWithoutClient
+import re
 
 
 class UserRole(str, Enum):
@@ -24,13 +26,41 @@ class UserBase(BaseModel):
 
 
 class ClientCreate(BaseModel):
-    first_name: str
-    last_name: str
+    first_name: str = Field(..., min_length=2, max_length=50)
+    last_name: str = Field(..., min_length=2, max_length=50)
     date_of_birth: date
+    is_student: bool = False
     email: EmailStr
-    phone: str
-    whatsapp_number: str | None = None
-    balance: float | None = 0.0
+    phone: str = Field(..., min_length=10, max_length=15)
+    whatsapp_number: str | None = Field(None, min_length=10, max_length=15)
+    balance: float | None = Field(0.0, ge=0)
+    students: list[StudentCreateWithoutClient] | None = None
+
+    @validator('phone')
+    def validate_phone(cls, v):
+        if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
+            raise ValueError('Неверный формат номера телефона. Должен содержать от 10 до 15 цифр')
+        return v
+
+    @validator('whatsapp_number')
+    def validate_whatsapp(cls, v):
+        if v and not re.match(r'^\+?[0-9]{10,15}$', v):
+            raise ValueError('Неверный формат номера WhatsApp. Должен содержать от 10 до 15 цифр')
+        return v
+
+    @validator('date_of_birth')
+    def validate_birth_date(cls, v):
+        if v > date.today():
+            raise ValueError('Дата рождения не может быть в будущем')
+        return v
+
+    @validator('first_name', 'last_name')
+    def validate_names(cls, v):
+        if not v.strip():
+            raise ValueError('Поле не может быть пустым')
+        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
+            raise ValueError('Имя может содержать только буквы, пробелы и дефис')
+        return v.strip()
 
 
 class ClientUpdate(BaseModel):
@@ -49,13 +79,48 @@ class ClientResponse(UserBase):
 
 
 class TrainerCreate(BaseModel):
-    first_name: str
-    last_name: str
+    first_name: str = Field(..., min_length=2, max_length=50)
+    last_name: str = Field(..., min_length=2, max_length=50)
     date_of_birth: date
     email: EmailStr
-    phone: str
-    salary: float | None = None
-    is_fixed_salary: bool | None = False
+    phone: str = Field(..., min_length=10, max_length=15)
+    salary: float | None = Field(None, ge=0)
+    is_fixed_salary: bool = False
+
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
+            raise ValueError('Неверный формат номера телефона. Должен содержать от 10 до 15 цифр')
+        return v
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_birth_date(cls, v: date) -> date:
+        if v > date.today():
+            raise ValueError('Дата рождения не может быть в будущем')
+        return v
+
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('Поле не может быть пустым')
+        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
+            raise ValueError('Имя может содержать только буквы, пробелы и дефис')
+        return v.strip()
+
+    @model_validator(mode='after')
+    def validate_salary(self) -> 'TrainerCreate':
+        salary = self.salary
+        is_fixed = self.is_fixed_salary
+
+        if is_fixed:
+            if salary is None or salary == 0:
+                raise ValueError('Фиксированная зарплата не может быть нулевой')
+        if salary is not None and salary < 0:
+            raise ValueError('Зарплата не может быть отрицательной')
+        return self
 
 class TrainerUpdate(BaseModel):
     first_name: str | None = None
@@ -70,6 +135,7 @@ class TrainerResponse(UserBase):
     salary: float | None = None
     is_fixed_salary: bool | None = None
     is_active: bool | None = None
+    deactivation_date: datetime | None = None
 
 class TrainersList(BaseModel):
     trainers: list[TrainerResponse]
@@ -84,3 +150,22 @@ class UserMe(BaseModel):
     email: EmailStr
     phone: str
     role: UserRole
+
+class StatusUpdate(BaseModel):
+    is_active: bool
+
+class ClientStatusResponse(BaseModel):
+    id: int
+    is_active: bool
+    deactivation_date: datetime | None
+    affected_students_count: int | None = Field(None, description="Количество затронутых студентов при каскадном изменении")
+
+    model_config = {"from_attributes": True}
+
+class StudentStatusResponse(BaseModel):
+    id: int
+    is_active: bool
+    deactivation_date: datetime | None
+    client_status: bool = Field(..., description="Статус родительского клиента")
+
+    model_config = {"from_attributes": True}

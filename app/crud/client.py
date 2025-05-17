@@ -1,7 +1,11 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from datetime import datetime
+
+from app.models import Student
 from app.models.user import User, UserRole
 from app.schemas.user import ClientCreate, ClientUpdate
+from app.schemas.student import StudentCreateWithoutClient
 
 
 # Создание клиента
@@ -16,16 +20,38 @@ def create_client(db: Session, client_data: ClientCreate):
             phone=client_data.phone,
             whatsapp_number=client_data.whatsapp_number,
             balance=client_data.balance,
-            role=UserRole.CLIENT.value
+            role=UserRole.CLIENT,
+            is_authenticated_with_google=True
         )
 
         db.add(client)
+        db.flush()
+        if client_data.is_student:
+            student = Student(
+                client_id=client.id,
+                is_active=True,
+                first_name=client_data.first_name,
+                last_name=client_data.last_name,
+                date_of_birth=client_data.date_of_birth,
+            )
+            db.add(student)
+        if client_data.students:
+            for student_data in client_data.students:
+                student = Student(
+                    client_id=client.id,
+                    is_active=student_data.is_active,
+                    first_name=student_data.first_name,
+                    last_name=student_data.last_name,
+                    date_of_birth=student_data.date_of_birth,
+                )
+                db.add(student)
         db.commit()
         db.refresh(client)
         return client
     except Exception as e:
+        db.rollback()
         print(f"Error occurred: {e}")
-        return None
+        raise e
 
 
 # Получить клиента по ID
@@ -58,3 +84,33 @@ def delete_client(db: Session, client_id: int):
     db.delete(client)
     db.commit()
     return client
+
+
+def update_client_status(db: Session, client_id: int, is_active: bool) -> tuple[User, int]:
+    """
+    Обновляет статус клиента и каскадно обновляет статусы связанных студентов.
+    Возвращает кортеж (client, affected_students_count).
+    """
+    client = db.query(User).filter(User.id == client_id).first()
+    if not client:
+        raise ValueError("Клиент не найден")
+    
+    client.is_active = is_active
+    client.deactivation_date = datetime.now() if not is_active else None
+    
+    affected_students_count = 0
+    if not is_active:
+        # Каскадное обновление студентов
+        students = db.query(Student).filter(Student.client_id == client_id).all()
+        for student in students:
+            student.is_active = False
+            student.deactivation_date = datetime.now()
+            affected_students_count += 1
+    
+    try:
+        db.commit()
+        db.refresh(client)
+        return client, affected_students_count
+    except Exception as e:
+        db.rollback()
+        raise e

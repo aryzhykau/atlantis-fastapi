@@ -16,6 +16,9 @@ from app.endpoints.trainer import router as trainer_router
 from app.endpoints.training_type import router as training_type_router
 from app.endpoints.subscription import router as subscription_router
 from app.endpoints.student import router as student_router
+from app.endpoints.training_template import router as training_template_router
+from app.endpoints.training_student_template import router as training_student_template_router
+from app.endpoints.real_trainings import router as real_trainings_router
 
 logging.basicConfig(level=logging.DEBUG)
 # logging.getLogger("sqlalchemy").setLevel(logging.DEBUG)
@@ -42,6 +45,9 @@ app.include_router(trainer_router)
 app.include_router(training_type_router)
 app.include_router(subscription_router)
 app.include_router(student_router)
+app.include_router(training_template_router)
+app.include_router(training_student_template_router)
+app.include_router(real_trainings_router)
 
 
 @app.get("/")

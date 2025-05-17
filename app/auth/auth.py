@@ -16,7 +16,7 @@ class RefreshTokenRequest(BaseModel):
 logger = logging.getLogger(__name__)
 
 # Create router instance
-router = APIRouter()
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 class TokensResponse(BaseModel):
@@ -39,13 +39,13 @@ async def auth_google(authorization: str = Header(...), db: Session = Depends(ge
 
     # Check if user exists in the database
     user = get_user_by_email(db, email=user_data["email"])
-    logger.debug(f"User found in the database: {user}")
+    logger.debug(f"User found in the database: {user.role}")
     if not user:
         raise HTTPException(status_code=403, detail="Access denied: user not found.")
 
     # Generate access and refresh tokens
-    access_token = create_access_token(data={"sub": user.email, "id": user.id, "role": user.role})
-    refresh_token = create_refresh_token(data={"sub": user.email, "id": user.id, "role": user.role})
+    access_token = create_access_token(data={"sub": user.email, "id": user.id, "role": user.role.value})
+    refresh_token = create_refresh_token(data={"sub": user.email, "id": user.id, "role": user.role.value})
 
     logger.debug(f"Access token: {access_token}", )
     logger.debug(f"Refresh token: {refresh_token}")

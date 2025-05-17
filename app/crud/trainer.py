@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.models.user import User, UserRole
 from app.schemas.user import TrainerCreate, TrainerUpdate
+from datetime import datetime
 
 
 # Создание тренера
@@ -36,8 +37,17 @@ def update_trainer(db: Session, trainer_id: int, trainer_data: TrainerUpdate):
     trainer = db.query(User).filter(User.id == trainer_id, User.role == UserRole.TRAINER).first()
     if not trainer:
         return None
+    
+    # Если меняется статус на неактивный, устанавливаем дату деактивации
+    if trainer_data.is_active is False and trainer.is_active:
+        trainer.deactivation_date = datetime.now()
+    # Если статус меняется на активный, убираем дату деактивации
+    elif trainer_data.is_active is True:
+        trainer.deactivation_date = None
+    
     for key, value in trainer_data.model_dump(exclude_unset=True).items():
         setattr(trainer, key, value)
+    
     db.commit()
     db.refresh(trainer)
     return trainer

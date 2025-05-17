@@ -3,10 +3,12 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.schemas.user import UserRole
-from app.schemas.student import StudentCreate, StudentResponse, StudentUpdate
+from app.schemas.user import UserRole, StatusUpdate, StudentStatusResponse
+from app.schemas.student import (StudentCreate, StudentResponse, StudentUpdate,
+                              StudentCreateWithoutClient)
 from app.crud.student import (create_student, get_students, get_student_by_id,
-                              update_student)
+                              update_student, update_student_status)
+from app.models.user import User
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
@@ -84,3 +86,39 @@ def update_student_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
 
     return student
+
+
+@router.patch("/{student_id}/status", response_model=StudentStatusResponse,
+            description="Обновление статуса студента")
+def update_student_status_endpoint(
+    student_id: int,
+    status_update: StatusUpdate,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Обновляет статус студента.
+    При попытке активации проверяет статус родительского клиента.
+    """
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Только администратор может изменять статус студентов")
+    
+    # Сначала проверяем существование студента
+    student = get_student_by_id(db, student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Студент не найден")
+    
+    try:
+        student = update_student_status(db, student_id, status_update.is_active)
+        client = db.query(User).filter(User.id == student.client_id).first()
+        
+        return StudentStatusResponse(
+            id=student.id,
+            is_active=student.is_active,
+            deactivation_date=student.deactivation_date,
+            client_status=client.is_active if client else False
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
