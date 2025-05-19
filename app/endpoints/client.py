@@ -93,11 +93,16 @@ def update_client_endpoint(
     """Обновляет информацию о клиенте."""
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Только администратор может обновлять информацию о клиенте")
+    
+    client = get_client(db, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+        
     try:
-        client = update_client(db, client_id, client_data)
-        if not client:
+        updated_client = update_client(db, client_id, client_data)
+        if not updated_client:
             raise HTTPException(status_code=404, detail="Клиент не найден")
-        return client
+        return updated_client
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

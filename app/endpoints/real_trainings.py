@@ -9,6 +9,10 @@ from app.schemas.real_training import (
     RealTrainingCreate,
     RealTrainingUpdate,
     RealTrainingResponse,
+    StudentCancellationRequest,
+    TrainingCancellationRequest,
+)
+from app.schemas.real_training_student import (
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
     RealTrainingStudentResponse,
@@ -26,6 +30,7 @@ from app.crud.real_training import (
     remove_student_from_training,
     generate_next_week_trainings,
 )
+from app.services.real_training import RealTrainingService
 
 router = APIRouter(prefix="/real-trainings", tags=["Real Trainings"])
 
@@ -213,13 +218,16 @@ def add_student_endpoint(
             detail="Вы можете добавлять студентов только на свои тренировки"
         )
 
-    student = add_student_to_training(db, training_id, student_data)
-    if not student:
-        raise HTTPException(
-            status_code=400,
-            detail="Не удалось добавить студента на тренировку"
-        )
-    return student
+    try:
+        student = add_student_to_training(db, training_id, student_data)
+        if not student:
+            raise HTTPException(
+                status_code=400,
+                detail="Не удалось добавить студента на тренировку"
+            )
+        return student
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # Отметка посещаемости студента
@@ -333,6 +341,7 @@ def generate_next_week_endpoint(
     
     Возвращает:
     - Количество созданных тренировок
+    - Список созданных тренировок
     - Период, на который созданы тренировки
     """
     if current_user["role"] != UserRole.ADMIN:
@@ -348,6 +357,7 @@ def generate_next_week_endpoint(
             return {
                 "message": "Нет новых тренировок для генерации",
                 "created_count": 0,
+                "trainings": [],
                 "period": {
                     "start": None,
                     "end": None
@@ -357,13 +367,81 @@ def generate_next_week_endpoint(
         return {
             "message": f"Успешно сгенерировано {created_count} тренировок",
             "created_count": created_count,
+            "trainings": [RealTrainingResponse.model_validate(training) for training in trainings],
             "period": {
-                "start": trainings[0].date,
-                "end": trainings[-1].date
+                "start": trainings[0].training_date,
+                "end": trainings[-1].training_date
             }
         }
     except Exception as e:
         raise HTTPException(
             status_code=400,
             detail=f"Ошибка при генерации тренировок: {str(e)}"
-        ) 
+        )
+
+
+# Отмена участия студента в тренировке
+@router.delete(
+    "/{training_id}/students/{student_id}/cancel",
+    status_code=204
+)
+async def cancel_student_endpoint(
+    training_id: int,
+    student_id: int,
+    cancellation_data: StudentCancellationRequest,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Отмена участия студента в тренировке с проверками:
+    - Время до начала (минимум 12 часов)
+    - Лимит переносов (максимум 3 в месяц)
+    """
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
+        raise HTTPException(
+            status_code=403,
+            detail="Только администраторы и тренеры могут отменять участие студентов"
+        )
+
+    service = RealTrainingService(db)
+    training = service.get_training(training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Тренировка не найдена")
+
+    # Тренер может отменять участие только на своих тренировках
+    if (current_user["role"] == UserRole.TRAINER and 
+        training.responsible_trainer_id != current_user["user_id"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Вы можете отменять участие только на своих тренировках"
+        )
+
+    await service.cancel_student(training_id, student_id, cancellation_data)
+    return None
+
+
+# Отмена тренировки
+@router.post("/{training_id}/cancel", response_model=RealTrainingResponse)
+async def cancel_training_endpoint(
+    training_id: int,
+    cancellation_data: TrainingCancellationRequest,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Полная отмена тренировки администратором.
+    
+    Процесс отмены:
+    1. Проверка прав доступа (только администратор)
+    2. Отмена тренировки для всех участников
+    3. Запуск финансовых процессов (если process_refunds=True)
+    4. Закрытие тренировки
+    """
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Только администратор может отменять тренировки"
+        )
+
+    service = RealTrainingService(db)
+    return await service.cancel_training(training_id, cancellation_data) 

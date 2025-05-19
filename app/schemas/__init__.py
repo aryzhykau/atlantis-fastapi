@@ -4,6 +4,9 @@ from .real_training import (
     RealTrainingCreate,
     RealTrainingUpdate,
     RealTrainingResponse,
+)
+
+from .real_training_student import (
     RealTrainingStudentBase,
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,

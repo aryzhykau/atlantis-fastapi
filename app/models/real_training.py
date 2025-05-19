@@ -12,8 +12,6 @@ SAFE_CANCELLATION_HOURS = 24
 class AttendanceStatus(str, Enum):
     PRESENT = "PRESENT"
     ABSENT = "ABSENT"
-    LATE = "LATE"
-    CANCELLED = "CANCELLED"
 
 class RealTraining(Base):
     __tablename__ = "real_trainings"
@@ -43,16 +41,18 @@ class RealTrainingStudent(Base):
     real_training_id = Column(Integer, ForeignKey("real_trainings.id"), nullable=False)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     template_student_id = Column(Integer, ForeignKey("training_client_templates.id"), nullable=True)
+    subscription_id = Column(Integer, ForeignKey("student_subscriptions.id"), nullable=True)
     status = Column(SQLEnum(AttendanceStatus), nullable=True)
-    notification_time = Column(DateTime, nullable=True)
     cancelled_at = Column(DateTime, nullable=True)
     cancellation_reason = Column(String, nullable=True)
     attendance_marked_at = Column(DateTime, nullable=True)
     attendance_marked_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    requires_payment = Column(Boolean, default=False)
+    notification_time = Column(DateTime, nullable=True)
+    requires_payment = Column(Boolean, nullable=True, default=True)
 
     # Relationships
     real_training = relationship("RealTraining", back_populates="students")
     student = relationship("Student", back_populates="real_trainings")
     template_student = relationship("TrainingStudentTemplate", back_populates="real_trainings")
-    attendance_marked_by = relationship("User", foreign_keys=[attendance_marked_by_id]) 
+    attendance_marked_by = relationship("User", foreign_keys=[attendance_marked_by_id])
+    subscription = relationship("StudentSubscription", back_populates="real_trainings") 

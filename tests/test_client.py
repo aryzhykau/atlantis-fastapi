@@ -253,3 +253,106 @@ def test_deactivate_client_without_auth(client, create_test_client):
     response = client.patch(f"/clients/{client_id}/status", 
                           json={"is_active": False})
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("invalid_phone", [
+    "123",  # слишком короткий
+    "1" * 20,  # слишком длинный
+    "abc1234567",  # содержит буквы
+    "+7(123)456-78-90",  # неверный формат
+])
+def test_create_client_with_invalid_phone(client, auth_headers, invalid_phone):
+    """Тест создания клиента с некорректным форматом телефона."""
+    data = {**client_data, "phone": invalid_phone}
+    response = client.post("/clients/", json=data, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_create_client_with_future_birth_date(client, auth_headers):
+    """Тест создания клиента с датой рождения в будущем."""
+    data = {**client_data, "date_of_birth": "2050-01-01"}
+    response = client.post("/clients/", json=data, headers=auth_headers)
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("invalid_whatsapp", [
+    "123",  # слишком короткий
+    "1" * 20,  # слишком длинный
+    "abc1234567",  # содержит буквы
+    "+7(123)456-78-90",  # неверный формат
+])
+def test_create_client_with_invalid_whatsapp(client, auth_headers, invalid_whatsapp):
+    """Тест создания клиента с некорректным форматом WhatsApp номера."""
+    data = {**client_data, "whatsapp_number": invalid_whatsapp}
+    response = client.post("/clients/", json=data, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_update_nonexistent_client(client, auth_headers):
+    """Тест обновления несуществующего клиента."""
+    response = client.patch("/clients/99999", json={"first_name": "New Name"}, headers=auth_headers)
+    assert response.status_code == 404
+    assert "Клиент не найден" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("invalid_update_data", [
+    {"email": "invalid-email"},  # неверный формат email
+    {"phone": "abc"},  # неверный формат телефона
+    {"date_of_birth": "2050-01-01"},  # дата в будущем
+])
+def test_update_client_with_invalid_data(client, auth_headers, create_test_client, invalid_update_data):
+    """Тест обновления клиента с некорректными данными."""
+    client_id = create_test_client.id
+    response = client.patch(f"/clients/{client_id}", json=invalid_update_data, headers=auth_headers)
+    assert response.status_code == 422
+
+
+def test_update_client_balance(client, auth_headers, create_test_client):
+    """Тест обновления баланса клиента."""
+    client_id = create_test_client.id
+    new_balance = 1000.50
+    response = client.patch(f"/clients/{client_id}", json={"balance": new_balance}, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["balance"] == new_balance
+
+
+def test_get_students_of_nonexistent_client(client, auth_headers):
+    """Тест получения студентов несуществующего клиента."""
+    response = client.get("/clients/99999/students", headers=auth_headers)
+    assert response.status_code == 404
+    assert "Клиент не найден" in response.json()["detail"]
+
+
+def test_get_students_without_auth(client, create_test_client):
+    """Тест получения студентов без авторизации."""
+    client_id = create_test_client.id
+    response = client.get(f"/clients/{client_id}/students")
+    assert response.status_code == 401
+
+
+def test_update_client_status_nonexistent(client, auth_headers):
+    """Тест обновления статуса несуществующего клиента."""
+    response = client.patch("/clients/99999/status", json={"is_active": False}, headers=auth_headers)
+    assert response.status_code == 404
+    assert "Клиент не найден" in response.json()["detail"]
+
+
+def test_update_client_status_without_auth(client, create_test_client):
+    """Тест обновления статуса клиента без авторизации."""
+    client_id = create_test_client.id
+    response = client.patch(f"/clients/{client_id}/status", json={"is_active": False})
+    assert response.status_code == 401
+
+
+def test_update_client_status_already_deactivated(client, auth_headers, create_test_client):
+    """Тест повторной деактивации уже деактивированного клиента."""
+    client_id = create_test_client.id
+    
+    # Сначала деактивируем клиента
+    response = client.patch(f"/clients/{client_id}/status", json={"is_active": False}, headers=auth_headers)
+    assert response.status_code == 200
+    
+    # Пытаемся деактивировать повторно
+    response = client.patch(f"/clients/{client_id}/status", json={"is_active": False}, headers=auth_headers)
+    assert response.status_code == 200  # или можно ожидать 400, в зависимости от бизнес-логики
+    assert not response.json()["is_active"]

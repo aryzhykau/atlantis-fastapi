@@ -1,0 +1,79 @@
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.auth.jwt_handler import verify_jwt_token
+from app.dependencies import get_db
+from app.schemas.payment import PaymentCreate, PaymentResponse, ClientBalanceResponse
+from app.services.payment import PaymentService
+
+router = APIRouter(prefix="/payments", tags=["Payments"])
+
+
+@router.post("/", response_model=PaymentResponse)
+def create_payment(
+    payment: PaymentCreate,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Регистрация нового платежа.
+    Только для админов и тренеров.
+    """
+    service = PaymentService(db)
+    return service.register_payment(
+        client_id=payment.client_id,
+        amount=payment.amount,
+        description=payment.description,
+        registered_by_id=current_user["id"]
+    )
+
+
+@router.delete("/{payment_id}", response_model=PaymentResponse)
+def cancel_payment(
+    payment_id: int,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Отмена платежа.
+    Только для админов.
+    """
+    service = PaymentService(db)
+    return service.cancel_payment(
+        payment_id=payment_id,
+        cancelled_by_id=current_user["id"]
+    )
+
+
+@router.get("/client/{client_id}", response_model=List[PaymentResponse])
+def get_client_payments(
+    client_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка платежей клиента.
+    Доступно админам и тренерам.
+    """
+    service = PaymentService(db)
+    service.validate_admin_or_trainer(current_user["id"])
+    return service.get_client_payments(client_id, skip, limit)
+
+
+@router.get("/client/{client_id}/balance", response_model=ClientBalanceResponse)
+def get_client_balance(
+    client_id: int,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение текущего баланса клиента.
+    Доступно админам и тренерам.
+    """
+    service = PaymentService(db)
+    service.validate_admin_or_trainer(current_user["id"])
+    balance = service.get_client_balance(client_id)
+    return ClientBalanceResponse(client_id=client_id, balance=balance) 

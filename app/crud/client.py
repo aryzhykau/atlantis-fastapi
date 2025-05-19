@@ -48,6 +48,9 @@ def create_client(db: Session, client_data: ClientCreate):
         db.commit()
         db.refresh(client)
         return client
+    except ValueError as e:
+        db.rollback()
+        raise e
     except Exception as e:
         db.rollback()
         print(f"Error occurred: {e}")
@@ -66,14 +69,21 @@ def get_all_clients(db: Session):
 
 # Обновление клиента
 def update_client(db: Session, client_id: int, client_data: ClientUpdate):
-    client = db.query(User).filter(User.id == client_id, User.role == UserRole.CLIENT).first()
-    if not client:
-        return None
-    for key, value in client_data.model_dump(exclude_unset=True).items():
-        setattr(client, key, value)
-    db.commit()
-    db.refresh(client)
-    return client
+    try:
+        client = db.query(User).filter(User.id == client_id, User.role == UserRole.CLIENT).first()
+        if not client:
+            return None
+        for key, value in client_data.model_dump(exclude_unset=True).items():
+            setattr(client, key, value)
+        db.commit()
+        db.refresh(client)
+        return client
+    except ValueError as e:
+        db.rollback()
+        raise e
+    except Exception as e:
+        db.rollback()
+        raise e
 
 
 # Удалить клиента

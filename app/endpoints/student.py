@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
 from app.schemas.user import UserRole, StatusUpdate, StudentStatusResponse
 from app.schemas.student import (StudentCreate, StudentResponse, StudentUpdate,
                               StudentCreateWithoutClient)
+from app.schemas.payment import PaymentHistoryResponse
 from app.crud.student import (create_student, get_students, get_student_by_id,
-                              update_student, update_student_status)
+                              update_student, update_student_status, get_students_by_client_id)
 from app.models.user import User
+from app.models.payment_history import PaymentHistory
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
@@ -122,3 +125,50 @@ def update_student_status_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Получение студентов по ID клиента
+@router.get("/client/{client_id}", response_model=list[StudentResponse])
+def get_students_by_client_endpoint(
+    client_id: int,
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """Получение списка студентов для конкретного клиента"""
+    # Проверка прав доступа
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Проверяем существование клиента
+    client = db.query(User).filter(User.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail=f"Client with ID {client_id} not found")
+
+    # Получение списка студентов
+    students = get_students_by_client_id(db, client_id)
+    return students
+
+
+# Получение истории платежей студента
+@router.get("/{student_id}/payments", response_model=list[PaymentHistoryResponse])
+def get_student_payments_endpoint(
+    student_id: int,
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """Получение истории платежей для конкретного студента"""
+    # Проверка прав доступа
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Проверяем существование студента
+    student = get_student_by_id(db, student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found")
+
+    # Получаем историю платежей
+    payments = db.query(PaymentHistory).filter(
+        PaymentHistory.client_id == student.client_id
+    ).order_by(desc(PaymentHistory.created_at)).all()
+
+    return payments

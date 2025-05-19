@@ -12,7 +12,6 @@ from app.models import (
     TrainingStudentTemplate,
     RealTraining,
     RealTrainingStudent,
-    GenerationSettings,
 )
 from app.models.user import UserRole
 from app.crud.real_training import generate_next_week_trainings
@@ -126,26 +125,7 @@ def template_with_student(db_session: Session, training_template, student):
     db_session.commit()
 
 
-@pytest.fixture
-def generation_settings(db_session: Session):
-    """Создает тестовые настройки генерации"""
-    settings = GenerationSettings(
-        generation_day=7,  # Воскресенье
-        generation_time=time(21, 0),  # 21:00
-        is_active=True,
-        safe_cancellation_hours=24,
-        last_generation=datetime.utcnow(),
-        next_generation=datetime.utcnow() + timedelta(days=7)
-    )
-    db_session.add(settings)
-    db_session.commit()
-    db_session.refresh(settings)
-    yield settings
-    db_session.execute(text("DELETE FROM generation_settings"))
-    db_session.commit()
-
-
-def test_generate_next_week_trainings(db_session: Session, training_template, template_with_student, generation_settings):
+def test_generate_next_week_trainings(db_session: Session, training_template, template_with_student):
     """Тест генерации тренировок на следующую неделю"""
     # Генерируем тренировки
     created_count, trainings = generate_next_week_trainings(db_session)
@@ -175,7 +155,7 @@ def test_generate_next_week_trainings(db_session: Session, training_template, te
     assert training.training_date == next_monday
 
 
-def test_generate_next_week_endpoint_as_admin(client, auth_headers, training_template, template_with_student, generation_settings):
+def test_generate_next_week_endpoint_as_admin(client, auth_headers, training_template, template_with_student):
     """Тест эндпойнта генерации тренировок от имени админа"""
     response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
     assert response.status_code == status.HTTP_200_OK
@@ -241,7 +221,7 @@ def test_generate_next_week_with_inactive_template(db_session: Session, training
     assert len(trainings) == 0
 
 
-def test_generate_next_week_with_frozen_student(db_session: Session, training_template, template_with_student, generation_settings):
+def test_generate_next_week_with_frozen_student(db_session: Session, training_template, template_with_student):
     """Тест генерации тренировок с замороженным студентом"""
     # Замораживаем студента
     template_with_student.is_frozen = True
@@ -259,4 +239,82 @@ def test_generate_next_week_with_frozen_student(db_session: Session, training_te
     students = db_session.query(RealTrainingStudent).filter(
         RealTrainingStudent.real_training_id == training.id
     ).all()
-    assert len(students) == 0 
+    assert len(students) == 0
+
+
+def test_cancel_training_as_admin(client, auth_headers, training_template, template_with_student):
+    """Тест отмены тренировки администратором"""
+    # Создаем тренировку через генерацию
+    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    assert response.status_code == status.HTTP_200_OK
+    training_id = response.json()["trainings"][0]["id"]
+    
+    # Отменяем тренировку
+    cancellation_data = {
+        "reason": "Test cancellation",
+        "process_refunds": True
+    }
+    response = client.post(
+        f"/real-trainings/{training_id}/cancel",
+        json=cancellation_data,
+        headers=auth_headers
+    )
+    assert response.status_code == status.HTTP_200_OK
+    
+    # Проверяем что тренировка отменена
+    cancelled_training = response.json()
+    assert cancelled_training["cancelled_at"] is not None
+    assert cancelled_training["cancellation_reason"] == "Test cancellation"
+    
+    # Проверяем что все студенты отмечены как отмененные
+    for student in cancelled_training["students"]:
+        assert student["cancelled_at"] is not None
+        assert student["cancellation_reason"] == "Test cancellation"
+
+
+def test_cancel_training_as_non_admin(client, auth_headers, training_template, template_with_student, trainer, trainer_auth_headers):
+    """Тест что не-администратор не может отменить тренировку"""
+    # Создаем тренировку через генерацию
+    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    assert response.status_code == status.HTTP_200_OK
+    training_id = response.json()["trainings"][0]["id"]
+    
+    # Пытаемся отменить тренировку от имени тренера
+    cancellation_data = {
+        "reason": "Test cancellation",
+        "process_refunds": True
+    }
+    response = client.post(
+        f"/real-trainings/{training_id}/cancel",
+        json=cancellation_data,
+        headers=trainer_auth_headers
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_cancel_already_cancelled_training(client, auth_headers, training_template, template_with_student):
+    """Тест что нельзя отменить уже отмененную тренировку"""
+    # Создаем тренировку через генерацию
+    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    assert response.status_code == status.HTTP_200_OK
+    training_id = response.json()["trainings"][0]["id"]
+    
+    # Отменяем тренировку первый раз
+    cancellation_data = {
+        "reason": "Test cancellation",
+        "process_refunds": True
+    }
+    response = client.post(
+        f"/real-trainings/{training_id}/cancel",
+        json=cancellation_data,
+        headers=auth_headers
+    )
+    assert response.status_code == status.HTTP_200_OK
+    
+    # Пытаемся отменить второй раз
+    response = client.post(
+        f"/real-trainings/{training_id}/cancel",
+        json=cancellation_data,
+        headers=auth_headers
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST 

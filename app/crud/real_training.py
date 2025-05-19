@@ -10,11 +10,14 @@ from app.models import (
     TrainingStudentTemplate,
     User,
     TrainingType,
+    Student,
 )
 from app.models.real_training import SAFE_CANCELLATION_HOURS, AttendanceStatus
 from app.schemas.real_training import (
     RealTrainingCreate,
     RealTrainingUpdate,
+)
+from app.schemas.real_training_student import (
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
 )
@@ -114,7 +117,13 @@ def create_real_training(
     db.add(db_training)
     db.commit()
     db.refresh(db_training)
-    return db_training
+    
+    # Загружаем связанные объекты
+    db.refresh(db_training)
+    return db.query(RealTraining).options(
+        joinedload(RealTraining.trainer),
+        joinedload(RealTraining.training_type),
+    ).filter(RealTraining.id == db_training.id).first()
 
 
 def update_real_training(
@@ -192,6 +201,11 @@ def add_student_to_training(
     """
     Добавление студента на тренировку
     """
+    # Проверяем активность студента
+    student = db.query(Student).filter(Student.id == student_data.student_id).first()
+    if not student or not student.is_active:
+        raise ValueError("Cannot add inactive student to training")
+
     db_student = RealTrainingStudent(
         real_training_id=training_id,
         student_id=student_data.student_id,
@@ -273,11 +287,6 @@ def remove_student_from_training(
     return True
 
 
-
-
-
-
-
 def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
     """
     Генерирует тренировки на следующую неделю на основе шаблонов.
@@ -290,7 +299,7 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
     
     # Получаем все шаблоны с активными тренерами и типами тренировок
     templates = db.query(TrainingTemplate).join(
-        TrainingTemplate.trainer
+        TrainingTemplate.responsible_trainer
     ).join(
         TrainingTemplate.training_type
     ).filter(

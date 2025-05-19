@@ -28,34 +28,24 @@ class UserBase(BaseModel):
 class ClientCreate(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=50)
     last_name: str = Field(..., min_length=2, max_length=50)
-    date_of_birth: date
+    date_of_birth: date = Field(..., description="Дата рождения")
     is_student: bool = False
     email: EmailStr
-    phone: str = Field(..., min_length=10, max_length=15)
-    whatsapp_number: str | None = Field(None, min_length=10, max_length=15)
+    phone: str = Field(..., min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
     balance: float | None = Field(0.0, ge=0)
     students: list[StudentCreateWithoutClient] | None = None
 
-    @validator('phone')
-    def validate_phone(cls, v):
-        if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
-            raise ValueError('Неверный формат номера телефона. Должен содержать от 10 до 15 цифр')
-        return v
-
-    @validator('whatsapp_number')
-    def validate_whatsapp(cls, v):
-        if v and not re.match(r'^\+?[0-9]{10,15}$', v):
-            raise ValueError('Неверный формат номера WhatsApp. Должен содержать от 10 до 15 цифр')
-        return v
-
-    @validator('date_of_birth')
-    def validate_birth_date(cls, v):
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_birth_date(cls, v: date) -> date:
         if v > date.today():
             raise ValueError('Дата рождения не может быть в будущем')
         return v
 
-    @validator('first_name', 'last_name')
-    def validate_names(cls, v):
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v: str) -> str:
         if not v.strip():
             raise ValueError('Поле не может быть пустым')
         if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
@@ -64,13 +54,32 @@ class ClientCreate(BaseModel):
 
 
 class ClientUpdate(BaseModel):
-    first_name: str | None = None
-    last_name: str | None = None
+    first_name: str | None = Field(None, min_length=2, max_length=50)
+    last_name: str | None = Field(None, min_length=2, max_length=50)
     email: EmailStr | None = None
-    phone: str | None = None
-    whatsapp_number: str | None = None
-    balance: float | None = None
+    phone: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    balance: float | None = Field(None, ge=0)
     is_active: bool | None = None
+    date_of_birth: date | None = None
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_birth_date(cls, v: date | None) -> date | None:
+        if v is not None and v > date.today():
+            raise ValueError('Дата рождения не может быть в будущем')
+        return v
+
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v: str | None) -> str | None:
+        if v is not None:
+            if not v.strip():
+                raise ValueError('Поле не может быть пустым')
+            if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
+                raise ValueError('Имя может содержать только буквы, пробелы и дефис')
+            return v.strip()
+        return v
 
 class ClientResponse(UserBase):
     whatsapp_number: str | None = None

@@ -71,3 +71,10 @@ class User(Base):
         if self.role == UserRole.ADMIN:
             raise ValueError("Поле 'is_active' не применяется для пользователей с ролью 'ADMIN'.")
         return value
+
+    # Валидация: дата рождения не может быть в будущем
+    @validates("date_of_birth")
+    def validate_birth_date(self, key, value):
+        if value > date.today():
+            raise ValueError("Дата рождения не может быть в будущем")
+        return value

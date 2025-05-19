@@ -1,8 +1,8 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, case
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, case, func
+from sqlalchemy.orm import relationship, column_property
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
 
 from app.database import Base  # Убедитесь, что Base импортируется из вашего настроенного проекта
 
@@ -31,24 +31,50 @@ class StudentSubscription(Base):
     is_auto_renew = Column(Boolean, default=False)  # Включено ли автопродление
     freeze_start_date = Column(DateTime(timezone=True), nullable=True)  # Начало периода заморозки
     freeze_end_date = Column(DateTime(timezone=True), nullable=True)  # Конец периода заморозки
+    
+    # Учет тренировок
+    sessions_left = Column(Integer, nullable=False)  # Оставшиеся тренировки
+    transferred_sessions = Column(Integer, default=0)  # Перенесенные тренировки (максимум 3)
+    
+    # Автопродление
+    auto_renewal_invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)  # Инвойс на автопродление
 
-    student = relationship("Student", backref="student_subscriptions")  # Обратная связь со студентами
-    subscription = relationship("Subscription", backref="student_subscriptions")  # Обратная связь с абонементами
+    # Relationships
+    student = relationship("Student", backref="student_subscriptions")
+    subscription = relationship("Subscription", backref="student_subscriptions")
+    auto_renewal_invoice = relationship("Invoice", foreign_keys=[auto_renewal_invoice_id])
+    real_trainings = relationship("RealTrainingStudent", back_populates="subscription")
 
-
-    # Гибридное свойство для статуса подписки
     @hybrid_property
     def status(self):
-        """Вычисляет статус подписки: 'active', 'expired', 'frozen'."""
-        today = date.today()
-        if self.freeze_start_date and self.freeze_end_date:
-            if self.freeze_start_date <= today <= self.freeze_end_date:
-                return "frozen"
-        elif self.end_date < today:
+        """Вычисляет статус абонемента с учетом временных зон"""
+        current_time = datetime.now(tz=self.end_date.tzinfo)
+        
+        if (self.freeze_start_date and self.freeze_end_date and
+            current_time >= self.freeze_start_date and
+            current_time <= self.freeze_end_date):
+            return "frozen"
+        
+        if current_time > self.end_date:
             return "expired"
+        
         return "active"
 
-    # SQL-выражение для гибридного свойства
+    @status.expression
+    def status(cls):
+        """SQL expression для status с учетом временных зон"""
+        return case(
+            (
+                (cls.freeze_start_date.isnot(None)) &
+                (cls.freeze_end_date.isnot(None)) &
+                (func.now() >= cls.freeze_start_date) &
+                (func.now() <= cls.freeze_end_date),
+                "frozen"
+            ),
+            (func.now() > cls.end_date, "expired"),
+            else_="active"
+        )
+
     @hybrid_property
     def computed_end_date(self):
         """Пересчитанная дата окончания, добавляющая замороженные дни."""
@@ -56,11 +82,9 @@ class StudentSubscription(Base):
         if not subscription:
             raise ValueError("Subscription definition is missing for this entry")
 
-        # Длительность действия подписки
         validity_period = timedelta(days=subscription.validity_days)
         original_end_date = self.start_date + validity_period
 
-        # Учитываем заморозку
         if self.freeze_start_date and self.freeze_end_date:
             freeze_days = (self.freeze_end_date - self.freeze_start_date).days
             return original_end_date + timedelta(days=freeze_days)

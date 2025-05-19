@@ -1,5 +1,9 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from datetime import date, datetime
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.schemas.real_training_student import RealTrainingStudentResponse
 
 
 # Базовая схема (поля для всех студентов)
@@ -20,6 +24,12 @@ class StudentCreateWithoutClient(BaseModel):
     date_of_birth: date
     is_active: bool = True
 
+    @validator('date_of_birth')
+    def validate_birth_date(cls, v):
+        if v > date.today():
+            raise ValueError("Дата рождения не может быть в будущем")
+        return v
+
 
 # Схема для создания студента
 class StudentCreate(BaseModel):
@@ -28,6 +38,12 @@ class StudentCreate(BaseModel):
     date_of_birth: date
     is_active: bool = True
     client_id: int  # ID клиента (связь с пользователем)
+
+    @validator('date_of_birth')
+    def validate_birth_date(cls, v):
+        if v > date.today():
+            raise ValueError("Дата рождения не может быть в будущем")
+        return v
 
 
 class StudentUser(BaseModel):
@@ -47,6 +63,12 @@ class StudentUpdate(BaseModel):
     date_of_birth: date | None = None
     is_active: bool | None = None
     client_id: int | None = None  # Возможность изменять связь с клиентом
+
+    @validator('date_of_birth')
+    def validate_birth_date(cls, v):
+        if v and v > date.today():
+            raise ValueError("Дата рождения не может быть в будущем")
+        return v
 
 
 # Схема ответа для одного студента
