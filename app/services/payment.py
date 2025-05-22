@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import List, Optional
 from fastapi import HTTPException
@@ -16,6 +17,8 @@ from app.models import (
 from app.models.payment_history import OperationType
 from app.services.invoice import InvoiceService
 
+
+logger = logging.getLogger(__name__)
 
 class PaymentService:
     def __init__(self, db: Session):
@@ -41,38 +44,58 @@ class PaymentService:
     def get_client_payments(
         self,
         client_id: int,
+        cancelled_status: str = "all",
         skip: int = 0,
         limit: int = 100
     ) -> List[Payment]:
-        """Получение списка платежей клиента"""
-        return crud.get_client_payments(self.db, client_id, skip, limit)
+        """
+        Получение списка платежей клиента
+        
+        Args:
+            client_id: ID клиента
+            cancelled_status: Статус отмены платежей ("all", "cancelled", "not_cancelled")
+            skip: Смещение для пагинации
+            limit: Лимит записей для пагинации
+            
+        Returns:
+            Список платежей, соответствующих критериям
+        """
+        # Проверяем допустимость статуса
+        if cancelled_status not in ["all", "cancelled", "not_cancelled"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid cancelled_status. Must be 'all', 'cancelled' or 'not_cancelled'"
+            )
+            
+        return crud.get_client_payments(
+            self.db, 
+            client_id, 
+            cancelled_status=cancelled_status,
+            skip=skip, 
+            limit=limit
+        )
 
     def register_payment(
         self,
         client_id: int,
         amount: float,
-        description: str,
-        registered_by_id: int
+        registered_by_id: int,
+        description: Optional[str] = None
     ) -> Payment:
         """
         Регистрация нового платежа
         1. Проверяем права доступа
         2. Валидируем сумму платежа
         3. Создаем платеж
-        4. Обновляем баланс клиента
+        4. Обновляем баланс клиента ПОЛНОСТЬЮ
         5. Создаем запись в истории
-        6. Запускаем автоматическое погашение инвойсов
+        6. Пытаемся погасить инвойсы из баланса
         """
         # Проверяем права доступа
         self.validate_admin_or_trainer(registered_by_id)
 
         # Валидация описания
-        if not description or len(description.strip()) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Payment description cannot be empty"
-            )
-        if len(description) > 500:
+        if description is not None and len(description) > 500:
             raise HTTPException(
                 status_code=400,
                 detail="Payment description is too long (max 500 characters)"
@@ -101,31 +124,15 @@ class PaymentService:
                 description=description,
                 registered_by_id=registered_by_id
             )
-
-            # Получаем неоплаченные инвойсы, отсортированные по дате создания
-            unpaid_invoices = self.db.query(Invoice).filter(
-                Invoice.client_id == client_id,
-                Invoice.status == InvoiceStatus.UNPAID
-            ).order_by(Invoice.created_at.asc()).all()
-
-            # Вычитаем из суммы платежа оплату инвойсов
-            remaining_amount = amount
-            for invoice in unpaid_invoices:
-                if remaining_amount >= invoice.amount:
-                    invoice.status = InvoiceStatus.PAID
-                    invoice.paid_at = datetime.utcnow()
-                    invoice.payment_id = payment.id
-                    remaining_amount -= invoice.amount
-                    self.db.add(invoice)
-                if remaining_amount <= 0:
-                    break
-
-            # Обновляем баланс клиента на оставшуюся сумму
-            new_balance = current_balance + remaining_amount
+            logger.debug(f"Payment created for user: {client_id}")
+            logger.debug(f"Payment amount: {amount}")
+            
+            # Сначала обновляем баланс клиента на ПОЛНУЮ сумму платежа
+            new_balance = current_balance + amount
             client.balance = new_balance
             self.db.add(client)
-
-            # Создаем запись в истории
+            
+            # Создаем запись в истории платежа
             history = PaymentHistory(
                 client_id=client_id,
                 payment_id=payment.id,
@@ -137,6 +144,48 @@ class PaymentService:
                 description=description
             )
             self.db.add(history)
+            
+            # Теперь пытаемся оплатить инвойсы из обновленного баланса
+            logger.debug(f"Trying to pay invoices for user: {client_id} with balance: {new_balance}")
+            # Получаем неоплаченные инвойсы, отсортированные по дате создания
+            unpaid_invoices = self.db.query(Invoice).filter(
+                Invoice.client_id == client_id,
+                Invoice.status == InvoiceStatus.UNPAID
+            ).order_by(Invoice.created_at.asc()).all()
+            logger.debug(f"Unpaid invoices: {unpaid_invoices}")
+
+            # Пытаемся погасить инвойсы из баланса клиента
+            available_balance = new_balance
+            for invoice in unpaid_invoices:
+                logger.debug(f"Processing Invoice: {invoice}")
+                if available_balance >= invoice.amount:
+                    invoice.status = InvoiceStatus.PAID
+                    invoice.paid_at = datetime.utcnow()
+                    # Убираем привязку к конкретному платежу
+                    # invoice.payment_id = payment.id
+                    available_balance -= invoice.amount
+                    self.db.add(invoice)
+                    
+                    # Обновляем баланс клиента после оплаты каждого инвойса
+                    client.balance = available_balance
+                    self.db.add(client)
+                    
+                    # Создаем запись в истории об оплате инвойса
+                    invoice_payment_history = PaymentHistory(
+                        client_id=client_id,
+                        payment_id=None,  # Не привязываем к конкретному платежу
+                        invoice_id=invoice.id,  # Привязываем к инвойсу
+                        operation_type=OperationType.INVOICE_PAYMENT,
+                        amount=-invoice.amount,  # Отрицательная сумма, т.к. это расход
+                        balance_before=available_balance + invoice.amount,
+                        balance_after=available_balance,
+                        created_by_id=registered_by_id,
+                        description=f"Оплата инвойса #{invoice.id}"
+                    )
+                    self.db.add(invoice_payment_history)
+                else:
+                    # Если баланса не хватает, прекращаем обработку инвойсов
+                    break
 
             self.db.commit()
             return payment
@@ -155,10 +204,13 @@ class PaymentService:
         """
         Отмена платежа
         1. Проверяем права доступа (только админ)
-        2. Отменяем платеж
-        3. Отменяем оплату связанных инвойсов
-        4. Обновляем баланс клиента
-        5. Создаем запись в истории
+        2. Получаем информацию о платеже
+        3. Получаем текущий баланс клиента
+        4. Сравниваем баланс с суммой платежа:
+           - Если баланс >= сумма платежа: просто уменьшаем баланс
+           - Если баланс < сумма платежа: зануляем баланс и начинаем отменять инвойсы
+        5. Отмена инвойсов идет от новых к старым
+        6. Если остаточная сумма меньше суммы инвойса, записываем остаток в баланс
         """
         # Проверяем, что отменяет админ
         user = self.db.query(User).filter(User.id == cancelled_by_id).first()
@@ -168,6 +220,7 @@ class PaymentService:
                 detail="Only admins can cancel payments"
             )
 
+        # Получаем информацию о платеже
         payment = self.get_payment(payment_id)
         if payment.cancelled_at:
             raise HTTPException(
@@ -178,41 +231,124 @@ class PaymentService:
         # Получаем текущий баланс клиента
         client = self.db.query(User).filter(User.id == payment.client_id).first()
         current_balance = client.balance or 0.0
-
-        # Отменяем оплату связанных инвойсов
-        paid_invoices = self.db.query(Invoice).filter(
-            Invoice.payment_id == payment_id,
-            Invoice.status == InvoiceStatus.PAID
-        ).all()
-
-        for invoice in paid_invoices:
-            invoice.status = InvoiceStatus.UNPAID
-            invoice.paid_at = None
-            invoice.payment_id = None
-            self.db.add(invoice)
-
-        # Отменяем платеж
+        
+        # Сравниваем баланс с суммой платежа
+        if current_balance >= payment.amount:
+            # Если баланс достаточный, просто уменьшаем его на сумму платежа
+            new_balance = current_balance - payment.amount
+            client.balance = new_balance
+            self.db.add(client)
+            
+            # Создаем запись в истории
+            history = PaymentHistory(
+                payment_id=payment.id,
+                client_id=payment.client_id,
+                operation_type=OperationType.CANCELLATION,
+                amount=-payment.amount,
+                balance_before=current_balance,
+                balance_after=new_balance,
+                created_by_id=cancelled_by_id,
+                description=cancellation_reason
+            )
+            self.db.add(history)
+        else:
+            # Если баланса недостаточно, зануляем баланс и начинаем отменять инвойсы
+            remaining_amount = payment.amount - current_balance  # Остаток, который нужно покрыть отменой инвойсов
+            
+            # Зануляем баланс
+            new_balance = 0.0
+            client.balance = new_balance
+            
+            # Создаем запись в истории о списании всего баланса
+            history = PaymentHistory(
+                payment_id=payment.id,
+                client_id=payment.client_id,
+                operation_type=OperationType.CANCELLATION,
+                amount=-current_balance,  # Списываем весь текущий баланс
+                balance_before=current_balance,
+                balance_after=new_balance,
+                created_by_id=cancelled_by_id,
+                description=f"Частичная отмена платежа ({cancellation_reason})"
+            )
+            self.db.add(history)
+            
+            # Получаем все оплаченные инвойсы, начиная с новых (в обратном порядке)
+            # Ищем в истории платежей записи типа INVOICE_PAYMENT
+            paid_invoices_history = self.db.query(PaymentHistory).filter(
+                PaymentHistory.client_id == payment.client_id,
+                PaymentHistory.operation_type == OperationType.INVOICE_PAYMENT
+            ).order_by(desc(PaymentHistory.created_at)).all()
+            
+            # Обрабатываем каждую запись истории платежей
+            for history_item in paid_invoices_history:
+                if remaining_amount <= 0:
+                    break  # Если остаток полностью покрыт, выходим из цикла
+                
+                # Получаем инвойс
+                invoice = self.db.query(Invoice).filter(
+                    Invoice.id == history_item.invoice_id
+                ).first()
+                
+                if not invoice or invoice.status != InvoiceStatus.PAID:
+                    continue  # Пропускаем, если инвойс не найден или не оплачен
+                
+                invoice_amount = abs(history_item.amount)  # Абсолютное значение суммы инвойса
+                
+                if remaining_amount >= invoice_amount:
+                    # Если остатка хватает на полную отмену инвойса
+                    invoice.status = InvoiceStatus.UNPAID
+                    invoice.paid_at = None
+                    self.db.add(invoice)
+                    
+                    # Уменьшаем остаток
+                    remaining_amount -= invoice_amount
+                    
+                    # Создаем запись в истории об отмене оплаты инвойса
+                    invoice_cancel_history = PaymentHistory(
+                        client_id=payment.client_id,
+                        payment_id=payment.id,
+                        invoice_id=invoice.id,
+                        operation_type=OperationType.CANCELLATION,
+                        amount=0,  # Нулевое изменение баланса, т.к. он уже занулен
+                        balance_before=0,
+                        balance_after=0,
+                        created_by_id=cancelled_by_id,
+                        description=f"Отмена оплаты инвойса #{invoice.id} при отмене платежа #{payment.id}"
+                    )
+                    self.db.add(invoice_cancel_history)
+                else:
+                    # Если остатка не хватает на полную отмену инвойса
+                    # Отменяем инвойс и записываем разницу в баланс
+                    invoice.status = InvoiceStatus.UNPAID
+                    invoice.paid_at = None
+                    self.db.add(invoice)
+                    
+                    # Добавляем остаток разницы на баланс
+                    partial_refund = invoice_amount - remaining_amount
+                    client.balance = partial_refund
+                    self.db.add(client)
+                    
+                    # Создаем запись в истории
+                    invoice_partial_history = PaymentHistory(
+                        client_id=payment.client_id,
+                        payment_id=payment.id,
+                        invoice_id=invoice.id,
+                        operation_type=OperationType.CANCELLATION,
+                        amount=partial_refund,  # Положительная сумма, т.к. это пополнение
+                        balance_before=0,
+                        balance_after=partial_refund,
+                        created_by_id=cancelled_by_id,
+                        description=f"Отмена оплаты инвойса #{invoice.id} с частичным возвратом на баланс"
+                    )
+                    self.db.add(invoice_partial_history)
+                    
+                    remaining_amount = 0  # Весь остаток использован
+                    break
+        
+        # Отмечаем платеж как отмененный
         payment.cancelled_at = datetime.utcnow()
         payment.cancelled_by_id = cancelled_by_id
         self.db.add(payment)
-
-        # Обновляем баланс клиента
-        new_balance = current_balance - payment.amount
-        client.balance = new_balance
-        self.db.add(client)
-
-        # Создаем запись в истории
-        history = PaymentHistory(
-            payment_id=payment.id,
-            client_id=payment.client_id,
-            operation_type=OperationType.CANCELLATION,
-            amount=-payment.amount,
-            balance_before=current_balance,
-            balance_after=new_balance,
-            created_by_id=cancelled_by_id,
-            description=cancellation_reason
-        )
-        self.db.add(history)
 
         self.db.commit()
         return payment
@@ -268,6 +404,6 @@ class PaymentService:
         return self.register_payment(
             client_id=client_id,
             amount=amount,
-            description=description,
-            registered_by_id=registered_by_id
+            registered_by_id=registered_by_id,
+            description=description
         ) 

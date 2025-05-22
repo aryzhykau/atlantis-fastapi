@@ -57,6 +57,29 @@ def get_student_invoices(
     return {"items": invoices, "total": len(invoices)}
 
 
+@router.get("/client/{client_id}", response_model=InvoiceList)
+def get_client_invoices(
+    client_id: int,
+    status: Optional[InvoiceStatus] = None,
+    skip: int = 0,
+    limit: int = 100,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка инвойсов клиента.
+    Доступно всем авторизованным пользователям.
+    """
+    service = InvoiceService(db)
+    invoices = service.get_client_invoices(
+        client_id=client_id,
+        status=status,
+        skip=skip,
+        limit=limit
+    )
+    return {"items": invoices, "total": len(invoices)}
+
+
 @router.post("/subscription", response_model=InvoiceResponse)
 def create_subscription_invoice(
     invoice_data: SubscriptionInvoiceCreate,

@@ -98,12 +98,13 @@ def add_subscription_to_student(
     Добавление абонемента студенту.
     Только для админов и тренеров.
     """
+    
     service = SubscriptionService(db)
     return service.add_subscription_to_student(
         student_id=student_subscription.student_id,
         subscription_id=student_subscription.subscription_id,
         is_auto_renew=student_subscription.is_auto_renew,
-        created_by_id=current_user.id
+        created_by_id=current_user["id"]
     )
 
 

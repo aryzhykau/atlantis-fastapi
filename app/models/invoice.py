@@ -43,9 +43,6 @@ class Invoice(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Кто создал
     cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Кто отменил
     
-    # Связь с платежом
-    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)  # Платеж, которым оплачен инвойс
-    
     # Флаг автопродления
     is_auto_renewal = Column(Boolean, default=False)  # Создан ли автоматически для автопродления
 
@@ -56,7 +53,6 @@ class Invoice(Base):
     training = relationship("RealTraining", backref="invoices")
     created_by = relationship("User", foreign_keys=[created_by_id])
     cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
-    payment = relationship("Payment", backref="invoices")
     auto_renewal_subscription = relationship("StudentSubscription", foreign_keys="StudentSubscription.auto_renewal_invoice_id")
 
     def __repr__(self):

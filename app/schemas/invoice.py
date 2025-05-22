@@ -41,7 +41,6 @@ class InvoiceResponse(BaseModel):
     cancelled_at: Optional[datetime] = None
     created_by_id: int
     cancelled_by_id: Optional[int] = None
-    payment_id: Optional[int] = None
     is_auto_renewal: bool
 
     model_config = {"from_attributes": True}

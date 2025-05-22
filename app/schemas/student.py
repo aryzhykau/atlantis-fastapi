@@ -22,7 +22,6 @@ class StudentCreateWithoutClient(BaseModel):
     first_name: str
     last_name: str
     date_of_birth: date
-    is_active: bool = True
 
     @validator('date_of_birth')
     def validate_birth_date(cls, v):

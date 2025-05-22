@@ -53,6 +53,45 @@ def update_trainer(db: Session, trainer_id: int, trainer_data: TrainerUpdate):
     return trainer
 
 
+# Обновление статуса тренера
+def update_trainer_status(db: Session, trainer_id: int, is_active: bool):
+    """
+    Обновляет только статус тренера (активный/неактивный)
+    
+    Args:
+        db: Сессия базы данных
+        trainer_id: ID тренера
+        is_active: Новый статус (True - активный, False - неактивный)
+        
+    Returns:
+        User: Обновленный объект тренера или None, если тренер не найден
+    """
+    trainer = db.query(User).filter(User.id == trainer_id, User.role == UserRole.TRAINER).first()
+    if not trainer:
+        return None
+    
+    # Проверяем, изменился ли статус
+    status_changed = trainer.is_active != is_active
+    
+    # Устанавливаем новый статус
+    trainer.is_active = is_active
+    
+    # Если деактивируем тренера, устанавливаем дату деактивации
+    if is_active is False:
+        trainer.deactivation_date = datetime.now()
+    # Если активируем тренера, убираем дату деактивации
+    else:
+        trainer.deactivation_date = None
+    
+    try:
+        db.commit()
+        db.refresh(trainer)
+        return trainer
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
 # Удалить тренера
 def delete_trainer(db: Session, trainer_id: int):
     trainer = db.query(User).filter(User.id == trainer_id, User.role == UserRole.TRAINER).first()

@@ -32,13 +32,13 @@ client_with_students_data = {
             "first_name": "Alice",
             "last_name": "Doe",
             "date_of_birth": "2015-01-01",
-            "is_active": True
+
         },
         {
             "first_name": "Bob",
             "last_name": "Doe",
             "date_of_birth": "2017-01-01",
-            "is_active": True
+
         }
     ]
 }

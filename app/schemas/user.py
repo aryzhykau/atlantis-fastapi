@@ -33,7 +33,6 @@ class ClientCreate(BaseModel):
     email: EmailStr
     phone: str = Field(..., min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
     whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
-    balance: float | None = Field(0.0, ge=0)
     students: list[StudentCreateWithoutClient] | None = None
 
     @field_validator('date_of_birth')

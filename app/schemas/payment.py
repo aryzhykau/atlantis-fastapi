@@ -7,7 +7,7 @@ from app.models.payment_history import OperationType
 class PaymentBase(BaseModel):
     """Базовая схема платежа"""
     amount: float = Field(..., description="Сумма платежа")
-    description: str = Field(..., description="Описание платежа")
+    description: Optional[str] = Field(None, description="Описание платежа")
 
 
 class PaymentCreate(PaymentBase):

@@ -150,3 +150,61 @@ def test_trainer_deactivation(client, auth_headers):
     assert response.json()["is_active"] is True
     assert response.json()["deactivation_date"] is None
 
+
+def test_update_trainer_status_endpoint(client, auth_headers):
+    """Тест эндпоинта обновления статуса тренера"""
+    # Создаем тренера
+    created_trainer = client.post("/trainers/", json=trainer_data, headers=auth_headers).json()
+    trainer_id = created_trainer["id"]
+    
+    # Проверяем начальный статус
+    assert created_trainer["is_active"] is True
+    assert created_trainer["deactivation_date"] is None
+    
+    # Деактивируем тренера через специальный эндпоинт
+    response = client.patch(
+        f"/trainers/{trainer_id}/status", 
+        json={"is_active": False}, 
+        headers=auth_headers
+    )
+    assert response.status_code == 200
+    deactivated = response.json()
+    assert deactivated["is_active"] is False
+    assert deactivated["deactivation_date"] is not None
+    
+    # Активируем тренера обратно
+    response = client.patch(
+        f"/trainers/{trainer_id}/status", 
+        json={"is_active": True}, 
+        headers=auth_headers
+    )
+    assert response.status_code == 200
+    activated = response.json()
+    assert activated["is_active"] is True
+    assert activated["deactivation_date"] is None
+
+
+def test_update_trainer_status_not_found(client, auth_headers):
+    """Тест эндпоинта обновления статуса несуществующего тренера"""
+    # Используем несуществующий ID
+    non_existent_id = 9999
+    
+    # Пытаемся изменить статус несуществующего тренера
+    response = client.patch(
+        f"/trainers/{non_existent_id}/status", 
+        json={"is_active": False}, 
+        headers=auth_headers
+    )
+    assert response.status_code == 404
+    assert "не найден" in response.json()["detail"]
+
+
+def test_update_trainer_status_unauthorized(client):
+    """Тест доступа к эндпоинту без авторизации"""
+    # Пытаемся изменить статус без авторизации
+    response = client.patch(
+        "/trainers/1/status", 
+        json={"is_active": False}
+    )
+    assert response.status_code in [401, 403]
+

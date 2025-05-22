@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.schemas.user import TrainerCreate, TrainerResponse, TrainerUpdate, TrainersList, UserRole
+from app.schemas.user import TrainerCreate, TrainerResponse, TrainerUpdate, TrainersList, UserRole, StatusUpdate
 from app.crud.trainer import (create_trainer, get_trainer, get_all_trainers,
-                              update_trainer, delete_trainer)
+                              update_trainer, delete_trainer, update_trainer_status)
 
 router = APIRouter(prefix="/trainers", tags=["Trainers"])
 
@@ -46,6 +46,36 @@ def update_trainer_endpoint(trainer_id: int, trainer_data: TrainerUpdate, curren
     if not trainer:
         raise HTTPException(status_code=404, detail="Trainer not found")
     return trainer
+
+
+# Обновление статуса тренера
+@router.patch("/{trainer_id}/status", response_model=TrainerResponse,
+            description="Обновление статуса тренера (активный/неактивный)")
+def update_trainer_status_endpoint(
+    trainer_id: int,
+    status_update: StatusUpdate,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Обновляет только статус тренера.
+    
+    При деактивации тренера устанавливается дата деактивации.
+    При активации дата деактивации сбрасывается.
+    """
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Только администратор может изменять статус тренеров")
+    
+    # Проверяем существование тренера
+    trainer = get_trainer(db, trainer_id)
+    if not trainer:
+        raise HTTPException(status_code=404, detail="Тренер не найден")
+    
+    try:
+        updated_trainer = update_trainer_status(db, trainer_id, status_update.is_active)
+        return updated_trainer
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Удаление тренера

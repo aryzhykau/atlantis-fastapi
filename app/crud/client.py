@@ -11,7 +11,6 @@ from app.schemas.student import StudentCreateWithoutClient
 # Создание клиента
 def create_client(db: Session, client_data: ClientCreate):
     try:
-        print("Подключённые таблицы:", db.execute(text("SELECT name FROM sqlite_master WHERE type='table';")).fetchall())
         client = User(
             first_name=client_data.first_name,
             last_name=client_data.last_name,
@@ -19,7 +18,7 @@ def create_client(db: Session, client_data: ClientCreate):
             email=client_data.email,
             phone=client_data.phone,
             whatsapp_number=client_data.whatsapp_number,
-            balance=client_data.balance,
+            balance=0,
             role=UserRole.CLIENT,
             is_authenticated_with_google=True
         )
@@ -39,7 +38,7 @@ def create_client(db: Session, client_data: ClientCreate):
             for student_data in client_data.students:
                 student = Student(
                     client_id=client.id,
-                    is_active=student_data.is_active,
+                    is_active=True,
                     first_name=student_data.first_name,
                     last_name=student_data.last_name,
                     date_of_birth=student_data.date_of_birth,
@@ -64,7 +63,7 @@ def get_client(db: Session, client_id: int):
 
 # Получить всех клиентов
 def get_all_clients(db: Session):
-    return db.query(User).filter(User.role == UserRole.CLIENT).all()
+    return db.query(User).filter(User.role == UserRole.CLIENT).order_by(User.first_name, User.last_name).all()
 
 
 # Обновление клиента

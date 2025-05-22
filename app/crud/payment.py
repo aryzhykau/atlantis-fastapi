@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -15,13 +15,37 @@ def get_payment(db: Session, payment_id: int) -> Optional[Payment]:
 def get_client_payments(
     db: Session,
     client_id: int,
+    cancelled_status: Literal["all", "cancelled", "not_cancelled"] = "all",
     skip: int = 0,
     limit: int = 100
 ) -> List[Payment]:
-    """Получение списка платежей клиента"""
+    """
+    Получение списка платежей клиента
+    
+    Args:
+        db: Сессия базы данных
+        client_id: ID клиента
+        cancelled_status: Статус отмены платежей для фильтрации:
+            - "all": все платежи (по умолчанию)
+            - "cancelled": только отмененные платежи
+            - "not_cancelled": только неотмененные платежи
+        skip: Количество записей для пропуска (для пагинации)
+        limit: Максимальное количество возвращаемых записей
+        
+    Returns:
+        Список платежей, соответствующих заданным критериям
+    """
+    query = db.query(Payment).filter(Payment.client_id == client_id)
+    
+    # Применяем фильтр по статусу отмены
+    if cancelled_status == "cancelled":
+        query = query.filter(Payment.cancelled_at.isnot(None))
+    elif cancelled_status == "not_cancelled":
+        query = query.filter(Payment.cancelled_at.is_(None))
+    
+    # Сортировка, пагинация и выполнение запроса
     return (
-        db.query(Payment)
-        .filter(Payment.client_id == client_id)
+        query
         .order_by(desc(Payment.payment_date))
         .offset(skip)
         .limit(limit)
@@ -33,12 +57,10 @@ def create_payment(
     db: Session,
     client_id: int,
     amount: float,
-    description: str,
-    registered_by_id: int
+    registered_by_id: int,
+    description: Optional[str] = None
 ) -> Payment:
-    """
-    Создание нового платежа
-    """
+    """Создание нового платежа"""
     client = db.query(User).filter(User.id == client_id).first()
     if not client:
         raise ValueError("Client not found")
@@ -47,52 +69,10 @@ def create_payment(
         client_id=client_id,
         amount=amount,
         description=description,
-        registered_by_id=registered_by_id
+        registered_by_id=registered_by_id,
+        payment_date=datetime.utcnow()
     )
     db.add(payment)
     db.commit()
     db.refresh(payment)
     return payment
-
-
-def cancel_payment(
-    db: Session,
-    payment_id: int,
-    cancelled_by_id: int
-) -> Optional[Payment]:
-    """Отмена платежа"""
-    # Получаем платеж
-    payment = get_payment(db, payment_id)
-    if not payment or payment.cancelled_at:
-        return None
-    
-    # Получаем клиента
-    client = db.query(User).filter(User.id == payment.client_id).first()
-    if not client:
-        raise ValueError("Client not found")
-    
-    current_balance = client.balance or 0.0
-    new_balance = current_balance - payment.amount
-    
-    # Отмечаем платеж как отмененный
-    payment.cancelled_at = datetime.utcnow()
-    payment.cancelled_by_id = cancelled_by_id
-    
-    # Создаем запись в истории
-    payment_history = PaymentHistory(
-        client_id=client.id,
-        payment_id=payment.id,
-        operation_type=OperationType.CANCELLATION,
-        amount=-payment.amount,  # Отрицательная сумма для отмены
-        balance_before=current_balance,
-        balance_after=new_balance,
-        created_by_id=cancelled_by_id
-    )
-    db.add(payment_history)
-    
-    # Обновляем баланс клиента
-    client.balance = new_balance
-    
-    db.commit()
-    db.refresh(payment)
-    return payment 

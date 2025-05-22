@@ -13,7 +13,7 @@ class Payment(Base):
     client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     amount = Column(Float, nullable=False)
     payment_date = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    description = Column(String, nullable=False)
+    description = Column(String, nullable=True)
     registered_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)

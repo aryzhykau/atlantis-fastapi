@@ -386,6 +386,47 @@ class TestInvoiceEndpoints:
         invoices = response.json()["items"]
         assert len(invoices) == 3
 
+    def test_get_client_invoices(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_subscription,
+        test_admin,
+        db_session
+    ):
+        service = InvoiceService(db_session)
+        
+        # Создаем несколько инвойсов для клиента
+        for i in range(3):
+            service.create_subscription_invoice(
+                client_id=test_client.id,
+                subscription_id=test_subscription.id,
+                amount=100.0,
+                description=f"Test invoice {i+1}",
+                created_by_id=test_admin.id
+            )
+
+        response = client.get(
+            f"/invoices/client/{test_client.id}",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        invoices = response.json()["items"]
+        assert len(invoices) == 3
+        
+        # Проверяем фильтрацию по статусу
+        response = client.get(
+            f"/invoices/client/{test_client.id}?status=UNPAID",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        invoices = response.json()["items"]
+        assert len(invoices) == 3
+        for invoice in invoices:
+            assert invoice["client_id"] == test_client.id
+            assert invoice["status"] == "UNPAID"
+
     def test_create_subscription_invoice_endpoint(
         self,
         client,

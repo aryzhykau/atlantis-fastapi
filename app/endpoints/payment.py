@@ -24,8 +24,8 @@ def create_payment(
     return service.register_payment(
         client_id=payment.client_id,
         amount=payment.amount,
-        description=payment.description,
-        registered_by_id=current_user["id"]
+        registered_by_id=current_user["id"],
+        description=payment.description
     )
 
 
@@ -49,6 +49,7 @@ def cancel_payment(
 @router.get("/client/{client_id}", response_model=List[PaymentResponse])
 def get_client_payments(
     client_id: int,
+    cancelled_status: str = "all",
     skip: int = 0,
     limit: int = 100,
     current_user = Depends(verify_jwt_token),
@@ -57,10 +58,24 @@ def get_client_payments(
     """
     Получение списка платежей клиента.
     Доступно админам и тренерам.
+    
+    Args:
+        client_id: ID клиента
+        cancelled_status: Статус отмены платежей:
+            - "all": все платежи (по умолчанию)
+            - "cancelled": только отмененные платежи
+            - "not_cancelled": только неотмененные платежи
+        skip: Смещение для пагинации
+        limit: Лимит записей для пагинации
     """
     service = PaymentService(db)
     service.validate_admin_or_trainer(current_user["id"])
-    return service.get_client_payments(client_id, skip, limit)
+    return service.get_client_payments(
+        client_id=client_id,
+        cancelled_status=cancelled_status,
+        skip=skip,
+        limit=limit
+    )
 
 
 @router.get("/client/{client_id}/balance", response_model=ClientBalanceResponse)

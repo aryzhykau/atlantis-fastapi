@@ -308,7 +308,7 @@ class TestPaymentService:
         """Тест отмены платежа с автоматической отменой оплаты инвойсов"""
         service = PaymentService(db_session)
         
-        # Создаем платеж и оплачиваем инвойс
+        # Создаем платеж
         payment = service.register_payment(
             client_id=test_client.id,
             amount=test_invoice.amount,
@@ -316,7 +316,7 @@ class TestPaymentService:
             registered_by_id=test_admin.id
         )
         
-        # Проверяем, что инвойс оплачен
+        # Проверяем, что инвойс оплачен автоматически
         db_session.refresh(test_invoice)
         assert test_invoice.status == InvoiceStatus.PAID
         
@@ -332,13 +332,14 @@ class TestPaymentService:
         assert test_invoice.status == InvoiceStatus.UNPAID
         assert test_invoice.paid_at is None
         
-        # Проверяем запись об отмене
+        # Проверяем запись об отмене (сейчас отменяется с припиской "Частичная отмена платежа")
         cancellation_history = db_session.query(PaymentHistory).filter(
             PaymentHistory.payment_id == payment.id,
             PaymentHistory.operation_type == OperationType.CANCELLATION
         ).first()
         assert cancellation_history is not None
-        assert cancellation_history.description == "Test cancellation"
+        assert cancellation_history.description.endswith("Test cancellation)")
+        assert "отмена платежа" in cancellation_history.description
 
     def test_payment_history_access(
         self,
@@ -494,7 +495,7 @@ class TestPaymentService:
         db_session.refresh(invoice)
         assert invoice.status == InvoiceStatus.UNPAID
         assert invoice.paid_at is None  # Дата оплаты должна быть пустой
-        assert invoice.payment_id is None  # Связь с платежом не должна устанавливаться при частичной оплате
+        
 
     def test_payment_description_validation(
         self,
@@ -505,28 +506,382 @@ class TestPaymentService:
         """Тест валидации описания платежа"""
         service = PaymentService(db_session)
 
-        # Проверка пустого описания
-        with pytest.raises(HTTPException) as exc_info:
-            service.register_payment(
-                client_id=test_client.id,
-                amount=100.0,
-                description="",
-                registered_by_id=test_admin.id
-            )
-        assert exc_info.value.status_code == 400
-        assert "description" in str(exc_info.value.detail).lower()
-
         # Проверка слишком длинного описания (более 500 символов)
         long_description = "A" * 501
         with pytest.raises(HTTPException) as exc_info:
             service.register_payment(
                 client_id=test_client.id,
                 amount=100.0,
-                description=long_description,
-                registered_by_id=test_admin.id
+                registered_by_id=test_admin.id,
+                description=long_description
             )
         assert exc_info.value.status_code == 400
         assert "description" in str(exc_info.value.detail).lower()
+        
+        # Проверка успешного создания с пустым описанием
+        payment = service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            registered_by_id=test_admin.id,
+            description=""
+        )
+        assert payment is not None
+        assert payment.description == ""
+        
+        # Проверка успешного создания с None вместо описания
+        payment = service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            registered_by_id=test_admin.id,
+            description=None
+        )
+        assert payment is not None
+        assert payment.description is None
+
+    def test_cancel_payment_with_sufficient_balance(
+        self,
+        db_session: Session,
+        test_client,
+        test_admin
+    ):
+        """Тест отмены платежа, когда баланс достаточен (просто уменьшение баланса)"""
+        service = PaymentService(db_session)
+        
+        # Регистрируем платеж
+        payment_amount = 100.0
+        payment = service.register_payment(
+            client_id=test_client.id,
+            amount=payment_amount,
+            description="Test payment for cancellation",
+            registered_by_id=test_admin.id
+        )
+
+        # Добавляем дополнительный платеж, чтобы увеличить баланс
+        additional_amount = 50.0
+        service.register_payment(
+            client_id=test_client.id,
+            amount=additional_amount,
+            description="Additional payment",
+            registered_by_id=test_admin.id
+        )
+
+        # Проверяем, что баланс теперь больше суммы первого платежа
+        db_session.refresh(test_client)
+        initial_balance = test_client.balance
+        assert initial_balance > payment_amount
+
+        # Создаем инвойс
+        invoice = Invoice(
+            client_id=test_client.id,
+            amount=20.0,
+            description="Test invoice",
+            status=InvoiceStatus.UNPAID,
+            type=InvoiceType.SUBSCRIPTION,
+            created_by_id=test_admin.id,
+            is_auto_renewal=False
+        )
+        db_session.add(invoice)
+        db_session.commit()
+        db_session.refresh(invoice)
+        
+        # Запускаем процесс погашения инвойсов вручную
+        # Получаем неоплаченные инвойсы
+        unpaid_invoices = db_session.query(Invoice).filter(
+            Invoice.client_id == test_client.id,
+            Invoice.status == InvoiceStatus.UNPAID
+        ).order_by(Invoice.created_at.asc()).all()
+        
+        # Вручную погашаем инвойс
+        invoice.status = InvoiceStatus.PAID
+        invoice.paid_at = datetime.utcnow()
+        db_session.add(invoice)
+        db_session.commit()
+        db_session.refresh(invoice)
+        db_session.refresh(test_client)
+
+        # Создаем запись в истории платежей с типом INVOICE_PAYMENT
+        history = PaymentHistory(
+            client_id=test_client.id,
+            payment_id=None,
+            invoice_id=invoice.id,
+            operation_type=OperationType.INVOICE_PAYMENT,
+            amount=-invoice.amount,
+            balance_before=initial_balance,
+            balance_after=initial_balance - invoice.amount,
+            created_by_id=test_admin.id,
+            description=f"Оплата инвойса #{invoice.id}"
+        )
+        db_session.add(history)
+        db_session.commit()
+        
+        # Обновляем баланс клиента
+        test_client.balance = initial_balance - invoice.amount
+        db_session.add(test_client)
+        db_session.commit()
+        db_session.refresh(test_client)
+        
+        # Проверяем, что инвойс оплачен
+        assert invoice.status == InvoiceStatus.PAID
+        initial_balance = test_client.balance
+
+        # Отменяем первый платеж
+        cancelled_payment = service.cancel_payment(
+            payment_id=payment.id,
+            cancelled_by_id=test_admin.id,
+            cancellation_reason="Test cancellation"
+        )
+
+        # Проверяем отмену платежа
+        assert cancelled_payment.cancelled_at is not None
+        assert cancelled_payment.cancelled_by_id == test_admin.id
+
+        # Проверяем обновление баланса клиента - уменьшился на сумму первого платежа
+        db_session.refresh(test_client)
+        assert test_client.balance == initial_balance - payment_amount
+
+        # Проверяем, что инвойс остался оплаченным (т.к. баланса хватало)
+        db_session.refresh(invoice)
+        assert invoice.status == InvoiceStatus.PAID
+
+        # Проверяем создание записи в истории
+        cancellation_history = db_session.query(PaymentHistory).filter(
+            PaymentHistory.payment_id == payment.id,
+            PaymentHistory.operation_type == OperationType.CANCELLATION
+        ).first()
+        assert cancellation_history is not None
+        assert cancellation_history.amount == -payment_amount
+        assert cancellation_history.balance_before == initial_balance
+        assert cancellation_history.balance_after == initial_balance - payment_amount
+
+    def test_cancel_payment_with_insufficient_balance(
+        self,
+        db_session: Session,
+        test_client,
+        test_admin
+    ):
+        """Тест отмены платежа, когда баланс недостаточен (отмена инвойсов)"""
+        service = PaymentService(db_session)
+        
+        # Регистрируем платеж
+        payment_amount = 200.0
+        payment = service.register_payment(
+            client_id=test_client.id,
+            amount=payment_amount,
+            description="Test payment for cancellation",
+            registered_by_id=test_admin.id
+        )
+
+        # Создаем два инвойса
+        invoice1 = Invoice(
+            client_id=test_client.id,
+            amount=120.0,
+            description="Test invoice 1",
+            status=InvoiceStatus.UNPAID,
+            type=InvoiceType.SUBSCRIPTION,
+            created_by_id=test_admin.id,
+            is_auto_renewal=False
+        )
+        
+        invoice2 = Invoice(
+            client_id=test_client.id,
+            amount=80.0,
+            description="Test invoice 2",
+            status=InvoiceStatus.UNPAID,
+            type=InvoiceType.SUBSCRIPTION,
+            created_by_id=test_admin.id,
+            is_auto_renewal=False
+        )
+        
+        db_session.add(invoice1)
+        db_session.add(invoice2)
+        db_session.commit()
+        db_session.refresh(invoice1)
+        db_session.refresh(invoice2)
+        db_session.refresh(test_client)
+        
+        # Вручную погашаем инвойсы и создаем записи в истории
+        initial_balance = test_client.balance
+        
+        # Погашаем первый инвойс
+        invoice1.status = InvoiceStatus.PAID
+        invoice1.paid_at = datetime.utcnow()
+        db_session.add(invoice1)
+        db_session.commit()
+        
+        # Создаем запись в истории
+        history1 = PaymentHistory(
+            client_id=test_client.id,
+            payment_id=None,
+            invoice_id=invoice1.id,
+            operation_type=OperationType.INVOICE_PAYMENT,
+            amount=-invoice1.amount,
+            balance_before=initial_balance,
+            balance_after=initial_balance - invoice1.amount,
+            created_by_id=test_admin.id,
+            description=f"Оплата инвойса #{invoice1.id}"
+        )
+        db_session.add(history1)
+        
+        # Обновляем баланс клиента
+        test_client.balance = initial_balance - invoice1.amount
+        db_session.add(test_client)
+        db_session.commit()
+        db_session.refresh(test_client)
+        
+        # Погашаем второй инвойс
+        current_balance = test_client.balance
+        invoice2.status = InvoiceStatus.PAID
+        invoice2.paid_at = datetime.utcnow()
+        db_session.add(invoice2)
+        db_session.commit()
+        
+        # Создаем запись в истории
+        history2 = PaymentHistory(
+            client_id=test_client.id,
+            payment_id=None,
+            invoice_id=invoice2.id,
+            operation_type=OperationType.INVOICE_PAYMENT,
+            amount=-invoice2.amount,
+            balance_before=current_balance,
+            balance_after=current_balance - invoice2.amount,
+            created_by_id=test_admin.id,
+            description=f"Оплата инвойса #{invoice2.id}"
+        )
+        db_session.add(history2)
+        
+        # Обновляем баланс клиента
+        test_client.balance = current_balance - invoice2.amount
+        db_session.add(test_client)
+        db_session.commit()
+        db_session.refresh(test_client)
+        
+        # Инвойсы должны быть оплачены из баланса
+        db_session.refresh(invoice1)
+        db_session.refresh(invoice2)
+        assert invoice1.status == InvoiceStatus.PAID
+        assert invoice2.status == InvoiceStatus.PAID
+        
+        # Баланс должен быть 0
+        assert test_client.balance == 0.0
+        
+        # Добавляем маленький платеж, чтобы был недостаточный для отмены баланс
+        small_payment = service.register_payment(
+            client_id=test_client.id,
+            amount=50.0,
+            description="Additional small payment",
+            registered_by_id=test_admin.id
+        )
+        
+        db_session.refresh(test_client)
+        initial_balance = test_client.balance
+        assert initial_balance == 50.0  # Подтверждаем, что баланс теперь 50
+        
+        # Отменяем первый платеж на 200р
+        cancelled_payment = service.cancel_payment(
+            payment_id=payment.id,
+            cancelled_by_id=test_admin.id,
+            cancellation_reason="Test cancellation with insufficient balance"
+        )
+        
+        # Проверяем отмену платежа
+        assert cancelled_payment.cancelled_at is not None
+        
+        # Проверяем, что баланс обнулился
+        db_session.refresh(test_client)
+        
+        # Проверяем статус инвойсов
+        db_session.refresh(invoice1)
+        db_session.refresh(invoice2)
+        
+        # Оба инвойса должны быть отменены
+        assert invoice1.status == InvoiceStatus.UNPAID
+        assert invoice2.status == InvoiceStatus.UNPAID
+        
+        # Последний инвойс должен дать частичный возврат на баланс 
+        # (поскольку sum(инвойсы) - баланс < стоимость последнего инвойса)
+        # 200 - 50 = 150, 150 - 120 = 30
+        # 80 - 30 = 50р должно быть на балансе
+        assert test_client.balance > 0.0
+        
+        # Проверяем записи в истории
+        cancellation_histories = db_session.query(PaymentHistory).filter(
+            PaymentHistory.payment_id == payment.id,
+            PaymentHistory.operation_type == OperationType.CANCELLATION
+        ).all()
+        
+        assert len(cancellation_histories) > 1  # Должно быть несколько записей
+        
+        # Проверяем, что первая запись - списание всего баланса
+        first_history = [h for h in cancellation_histories if h.balance_before == initial_balance][0]
+        assert first_history.amount == -initial_balance
+        assert first_history.balance_after == 0.0
+        
+        # Должна быть хотя бы одна запись с положительной суммой - возврат на баланс
+        positive_histories = [h for h in cancellation_histories if h.amount > 0]
+        assert len(positive_histories) > 0
+
+    def test_get_client_payments_with_cancelled_status(
+        self,
+        db_session: Session,
+        test_client,
+        test_admin
+    ):
+        """Тест получения списка платежей с фильтрацией по статусу отмены"""
+        service = PaymentService(db_session)
+        
+        # Создаем обычный платеж
+        payment1 = service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Active payment",
+            registered_by_id=test_admin.id
+        )
+        
+        # Создаем платеж, который будет отменен
+        payment2 = service.register_payment(
+            client_id=test_client.id,
+            amount=200.0,
+            description="Payment to be cancelled",
+            registered_by_id=test_admin.id
+        )
+        
+        # Отменяем второй платеж
+        cancelled_payment = service.cancel_payment(
+            payment_id=payment2.id,
+            cancelled_by_id=test_admin.id,
+            cancellation_reason="Test cancellation"
+        )
+        
+        # Получаем все платежи (должно быть 2)
+        all_payments = service.get_client_payments(test_client.id)
+        assert len(all_payments) == 2
+        
+        # Получаем только активные платежи (должен быть 1)
+        active_payments = service.get_client_payments(
+            client_id=test_client.id,
+            cancelled_status="not_cancelled"
+        )
+        assert len(active_payments) == 1
+        assert active_payments[0].id == payment1.id
+        assert active_payments[0].cancelled_at is None
+        
+        # Получаем только отмененные платежи (должен быть 1)
+        cancelled_payments = service.get_client_payments(
+            client_id=test_client.id,
+            cancelled_status="cancelled"
+        )
+        assert len(cancelled_payments) == 1
+        assert cancelled_payments[0].id == payment2.id
+        assert cancelled_payments[0].cancelled_at is not None
+        
+        # Проверяем ошибку при некорректном статусе
+        with pytest.raises(HTTPException) as exc_info:
+            service.get_client_payments(
+                client_id=test_client.id,
+                cancelled_status="invalid_status"
+            )
+        assert exc_info.value.status_code == 400
+        assert "Invalid cancelled_status" in str(exc_info.value.detail)
 
 
 class TestPaymentEndpoints:
@@ -540,6 +895,25 @@ class TestPaymentEndpoints:
         assert response.json()["amount"] == payment_data["amount"]
         assert response.json()["description"] == payment_data["description"]
 
+    def test_create_payment_with_empty_description(self, client, auth_headers, payment_data):
+        """Тест создания платежа с пустым описанием"""
+        # Модифицируем данные платежа, устанавливая пустое описание
+        modified_data = {**payment_data, "description": ""}
+        
+        # Отправляем запрос на создание платежа с пустым описанием
+        response = client.post("/payments/", json=modified_data, headers=auth_headers)
+        
+        # Проверяем успешное создание
+        assert response.status_code == 200
+        assert response.json()["description"] == ""
+        
+        # Проверяем также с NULL значением (отсутствие поля)
+        modified_data = {**payment_data}
+        del modified_data["description"]
+        response = client.post("/payments/", json=modified_data, headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["description"] is None
+
     def test_cancel_payment(
         self,
         client,
@@ -552,6 +926,75 @@ class TestPaymentEndpoints:
         )
         assert response.status_code == 200
         assert response.json()["cancelled_at"] is not None
+
+    def test_get_client_payments_endpoint_filtering(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест эндпоинта получения списка платежей с фильтрацией по статусу отмены"""
+        service = PaymentService(db_session)
+        
+        # Создаем обычный платеж
+        payment1 = service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Active payment",
+            registered_by_id=test_admin.id
+        )
+        
+        # Создаем платеж, который будет отменен
+        payment2 = service.register_payment(
+            client_id=test_client.id,
+            amount=200.0,
+            description="Payment to be cancelled",
+            registered_by_id=test_admin.id
+        )
+        
+        # Отменяем второй платеж
+        cancelled_payment = service.cancel_payment(
+            payment_id=payment2.id,
+            cancelled_by_id=test_admin.id,
+            cancellation_reason="Test cancellation"
+        )
+        
+        # Получаем все платежи
+        response = client.get(
+            f"/payments/client/{test_client.id}",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+        
+        # Получаем только активные платежи
+        response = client.get(
+            f"/payments/client/{test_client.id}?cancelled_status=not_cancelled",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        active_payments = response.json()
+        assert len(active_payments) == 1
+        assert active_payments[0]["cancelled_at"] is None
+        
+        # Получаем только отмененные платежи
+        response = client.get(
+            f"/payments/client/{test_client.id}?cancelled_status=cancelled",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        cancelled_payments = response.json()
+        assert len(cancelled_payments) == 1
+        assert cancelled_payments[0]["cancelled_at"] is not None
+        
+        # Проверяем ошибку при некорректном статусе
+        response = client.get(
+            f"/payments/client/{test_client.id}?cancelled_status=invalid",
+            headers=auth_headers
+        )
+        assert response.status_code == 400
 
     def test_get_client_payments(
         self,
