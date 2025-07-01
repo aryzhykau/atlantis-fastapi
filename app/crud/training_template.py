@@ -1,5 +1,6 @@
-from sqlalchemy.orm import Session
-from app.models import TrainingTemplate, TrainingStudentTemplate
+from sqlalchemy.orm import Session, joinedload, selectinload
+from fastapi import HTTPException
+from app.models import TrainingTemplate, TrainingStudentTemplate, TrainingType
 from app.schemas.training_template import (
     TrainingTemplateCreate,
     TrainingTemplateUpdate,
@@ -9,9 +10,14 @@ from app.schemas.training_template import (
 
 
 
-# Получение списка всех тренировочных шаблонов
-def get_training_templates(db: Session):
-    return db.query(TrainingTemplate).order_by(TrainingTemplate.day_number).all()
+# Получение списка всех тренировочных шаблонов с опциональной фильтрацией по дню
+def get_training_templates(db: Session, day_number: int = None):
+    query = db.query(TrainingTemplate)
+    
+    if day_number is not None:
+        query = query.filter(TrainingTemplate.day_number == day_number)
+    
+    return query.order_by(TrainingTemplate.day_number, TrainingTemplate.start_time).all()
 
 
 # Получение тренировочного шаблона по ID
@@ -63,20 +69,56 @@ def delete_training_template(db: Session, template_id: int):
 
 # Получение списка всех студент-шаблонов
 def get_training_student_templates(db: Session):
-    return db.query(TrainingStudentTemplate).all()
+    return db.query(TrainingStudentTemplate).options(joinedload(TrainingStudentTemplate.student)).all()
 
 
 # Получение студент-шаблона по ID
 def get_training_student_template_by_id(db: Session, student_template_id: int):
-    return db.query(TrainingStudentTemplate).filter(TrainingStudentTemplate.id == student_template_id).first()
+    return db.query(TrainingStudentTemplate).options(joinedload(TrainingStudentTemplate.student)).filter(TrainingStudentTemplate.id == student_template_id).first()
 
 
 # Создание нового студент-шаблона
-def create_training_student_template(db: Session, student_template: TrainingStudentTemplateCreate):
+def create_training_student_template(db: Session, student_template_data: TrainingStudentTemplateCreate):
+    # 1. Получаем шаблон тренировки и связанный тип тренировки
+    training_template = (
+        db.query(TrainingTemplate)
+        .options(selectinload(TrainingTemplate.training_type))
+        .filter(TrainingTemplate.id == student_template_data.training_template_id)
+        .first()
+    )
+
+    if not training_template:
+        raise HTTPException(status_code=404, detail=f"Training template with id {student_template_data.training_template_id} not found")
+
+    # 2. Получаем максимальное количество участников из типа тренировки
+    training_type = training_template.training_type
+    if not training_type:
+        raise HTTPException(status_code=500, detail=f"Training type not found for template id {training_template.id}")
+    
+    max_participants = training_type.max_participants
+
+    # 3. Считаем текущее количество активных студентов в этом шаблоне
+    current_student_count = (
+        db.query(TrainingStudentTemplate)
+        .filter(
+            TrainingStudentTemplate.training_template_id == student_template_data.training_template_id,
+            TrainingStudentTemplate.is_frozen == False
+        )
+        .count()
+    )
+
+    # 4. Проверяем, не будет ли превышен лимит
+    if current_student_count >= max_participants:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot add student. Maximum number of participants ({max_participants}) for this training type in this template has been reached."
+        )
+
+    # Если все проверки пройдены, создаем запись
     db_student_template = TrainingStudentTemplate(
-        training_template_id=student_template.training_template_id,
-        student_id=student_template.student_id,
-        start_date=student_template.start_date,
+        training_template_id=student_template_data.training_template_id,
+        student_id=student_template_data.student_id,
+        start_date=student_template_data.start_date,
         is_frozen=False
     )
     db.add(db_student_template)

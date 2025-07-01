@@ -20,15 +20,16 @@ from app.crud.training_template import (
 router = APIRouter(prefix="/training_templates", tags=["Training Templates"])
 
 
-# Получение списка всех тренировочных шаблонов
+# Получение списка всех тренировочных шаблонов с опциональной фильтрацией по дню
 @router.get("/", response_model=list[TrainingTemplateResponse])
 def read_training_templates(
+    day_number: int = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    return get_training_templates(db=db)
+    return get_training_templates(db=db, day_number=day_number)
 
 
 # Получение тренировочного шаблона по ID
@@ -53,7 +54,7 @@ def create_training_template_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return create_training_template(db=db, training_template=training_template)
 
@@ -66,7 +67,7 @@ def update_training_template_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     updated_template = update_training_template(db=db, template_id=template_id, update_data=training_template)
     if not updated_template:
