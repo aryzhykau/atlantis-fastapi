@@ -39,7 +39,7 @@ def read_training_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     template = get_training_template_by_id(db=db, template_id=template_id)
     if not template:
@@ -82,7 +82,7 @@ def delete_training_template_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     deleted_template = delete_training_template(db=db, template_id=template_id)
     if not deleted_template:
