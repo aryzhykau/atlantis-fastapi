@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, Integer, String
+from sqlalchemy import Boolean, Column, Float, Integer, String, text
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -12,6 +12,7 @@ class TrainingType(Base):
     price = Column(Float, nullable=True)
     color = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
+    max_participants = Column(Integer, nullable=False, server_default=text("4"))
 
     # Relationships
     real_trainings = relationship("RealTraining", back_populates="training_type")

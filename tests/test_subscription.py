@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models import StudentSubscription, Invoice, InvoiceStatus
@@ -132,7 +132,7 @@ class TestStudentSubscription:
 
         # Замораживаем абонемент
         freeze_days = 7
-        freeze_start = datetime.utcnow()
+        freeze_start = datetime.now(timezone.utc)
         frozen_subscription = service.freeze_subscription(
             student_subscription_id=student_subscription.id,
             freeze_start_date=freeze_start,
@@ -140,8 +140,8 @@ class TestStudentSubscription:
             updated_by_id=test_admin.id
         )
 
-        assert frozen_subscription.freeze_start_date == freeze_start
-        assert frozen_subscription.freeze_end_date == freeze_start + timedelta(days=freeze_days)
+        assert frozen_subscription.freeze_start_date.replace(tzinfo=timezone.utc) == freeze_start
+        assert frozen_subscription.freeze_end_date.replace(tzinfo=timezone.utc) == freeze_start + timedelta(days=freeze_days)
 
         # Размораживаем абонемент
         unfrozen_subscription = service.unfreeze_subscription(

@@ -93,6 +93,26 @@ def test_admin(db_session):
 
 
 @pytest.fixture
+def test_trainer(db_session: Session) -> User:
+    """
+    Создает тестового тренера в базе данных.
+    """
+    trainer = User(
+        first_name="Тестовый",
+        last_name="Тренер",
+        email="fittesttrainer@example.com",
+        phone="1234567891",
+        date_of_birth=date(1990, 5, 15),
+        role=UserRole.TRAINER,
+        is_active=True,
+    )
+    db_session.add(trainer)
+    db_session.commit()
+    db_session.refresh(trainer)
+    return trainer
+
+
+@pytest.fixture
 def test_client(db_session):
     """
     Создает тестового клиента в базе данных.

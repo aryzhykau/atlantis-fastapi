@@ -24,52 +24,6 @@ from app.crud.training_template import (
 
 
 @pytest.fixture
-def test_trainer(db_session: Session) -> User:
-    trainer = User(
-        first_name="Тренер",
-        last_name="Тестов",
-        email="trainer@test.com",
-        phone="+79999999999",
-        date_of_birth=date(1990, 1, 1),
-        role=UserRole.TRAINER
-    )
-    db_session.add(trainer)
-    db_session.commit()
-    db_session.refresh(trainer)
-    return trainer
-
-
-@pytest.fixture
-def test_client(db_session: Session) -> User:
-    client = User(
-        first_name="Клиент",
-        last_name="Тестов",
-        email="client@test.com",
-        phone="+79999999998",
-        date_of_birth=date(1990, 1, 1),
-        role=UserRole.CLIENT
-    )
-    db_session.add(client)
-    db_session.commit()
-    db_session.refresh(client)
-    return client
-
-
-@pytest.fixture
-def test_student(db_session: Session, test_client: User) -> Student:
-    student = Student(
-        first_name="Студент",
-        last_name="Тестов",
-        date_of_birth=date(2010, 1, 1),
-        client_id=test_client.id
-    )
-    db_session.add(student)
-    db_session.commit()
-    db_session.refresh(student)
-    return student
-
-
-@pytest.fixture
 def test_training_type(db_session: Session) -> TrainingType:
     training_type = TrainingType(
         name="Тестовая тренировка",
@@ -259,4 +213,60 @@ class TestTrainingStudentTemplate:
         assert deleted_template.id == test_student_template.id
         
         template = get_training_student_template_by_id(db_session, test_student_template.id)
-        assert template is None 
+        assert template is None
+
+    def test_add_student_to_template_exceeds_limit(self, db_session: Session, test_trainer: User, test_client: User):
+        """
+        Тест: Нельзя добавить в шаблон студентов больше, чем max_participants в типе тренировки.
+        """
+        from fastapi import HTTPException
+
+        # 1. Создаем тип тренировки с лимитом в 1 участника
+        limited_training_type = TrainingType(
+            name="Limited Test Training",
+            is_subscription_only=False,
+            price=100.0,
+            color="#LIMIT",
+            max_participants=1  # Жесткий лимит
+        )
+        db_session.add(limited_training_type)
+        db_session.commit()
+
+        # 2. Создаем шаблон, использующий этот тип
+        template_data = TrainingTemplateCreate(
+            day_number=1,
+            start_time=time(12, 0),
+            responsible_trainer_id=test_trainer.id,
+            training_type_id=limited_training_type.id
+        )
+        template = create_training_template(db_session, template_data)
+        
+        # 3. Создаем двух студентов
+        student1 = Student(first_name="Student", last_name="One", client_id=test_client.id, date_of_birth=date(2010, 1, 1))
+        student2 = Student(first_name="Student", last_name="Two", client_id=test_client.id, date_of_birth=date(2010, 1, 2))
+        db_session.add_all([student1, student2])
+        db_session.commit()
+
+        # 4. Добавляем первого студента - должно пройти успешно
+        first_student_data = TrainingStudentTemplateCreate(
+            training_template_id=template.id,
+            student_id=student1.id,
+            start_date=date.today()
+        )
+        create_training_student_template(db_session, first_student_data)
+        
+        count = db_session.query(TrainingStudentTemplate).filter(TrainingStudentTemplate.training_template_id == template.id).count()
+        assert count == 1
+
+        # 5. Пытаемся добавить второго студента - должны получить ошибку
+        second_student_data = TrainingStudentTemplateCreate(
+            training_template_id=template.id,
+            student_id=student2.id,
+            start_date=date.today()
+        )
+        
+        with pytest.raises(HTTPException) as exc_info:
+            create_training_student_template(db_session, second_student_data)
+        
+        assert exc_info.value.status_code == 400
+        assert "Maximum number of participants" in exc_info.value.detail 

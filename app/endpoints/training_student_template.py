@@ -26,7 +26,7 @@ def read_training_student_templates(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return get_training_student_templates(db=db)
 
@@ -38,7 +38,7 @@ def read_training_student_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     student_template = get_training_student_template_by_id(db=db, student_template_id=student_template_id)
     if not student_template:
@@ -53,9 +53,9 @@ def create_training_student_template_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    return create_training_student_template(db=db, student_template=training_student_template)
+    return create_training_student_template(db=db, student_template_data=training_student_template)
 
 
 # Обновление существующего студент-шаблона
@@ -66,7 +66,7 @@ def update_training_student_template_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     updated_student_template = update_training_student_template(
         db=db, student_template_id=student_template_id, update_data=training_student_template
@@ -83,7 +83,7 @@ def delete_training_student_template_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(verify_jwt_token)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user["role"] != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     deleted_student_template = delete_training_student_template(db=db, student_template_id=student_template_id)
     if not deleted_student_template:

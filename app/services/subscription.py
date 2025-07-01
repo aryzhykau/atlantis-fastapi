@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import HTTPException
@@ -109,6 +109,14 @@ class SubscriptionService:
             transferred_sessions=transferred_sessions
         )
         self.db.add(student_subscription)
+        client = self.db.query(User).filter(User.id == student.client_id).first()
+        invoice_status = InvoiceStatus.UNPAID
+        if client.balance >= subscription.price:
+            client.balance -= subscription.price
+            self.db.flush()
+            self.db.refresh(client)
+            invoice_status = InvoiceStatus.PAID
+
 
         # Создаем инвойс для оплаты абонемента
         invoice = Invoice(
@@ -118,11 +126,15 @@ class SubscriptionService:
             type=InvoiceType.SUBSCRIPTION,
             amount=subscription.price,
             description=f"Subscription: {subscription.name}",
-            status=InvoiceStatus.UNPAID,
+            status=invoice_status,
             created_by_id=created_by_id,
             is_auto_renewal=False
         )
         self.db.add(invoice)
+        self.db.flush()
+        
+        student.active_subscription_id = subscription_id
+        self.db.add(student)
         self.db.commit()
         self.db.refresh(student_subscription)
 
@@ -198,9 +210,21 @@ class SubscriptionService:
             raise HTTPException(status_code=404, detail="Subscription not found")
 
         # Проверяем, что абонемент заморожен
-        if subscription.status != "frozen":
+        if (not subscription.freeze_start_date and not subscription.freeze_end_date):
             raise HTTPException(status_code=400, detail="Subscription is not frozen")
+        
+        # Приводим даты из БД к UTC, если они существуют
+        freeze_end_date_utc = subscription.freeze_end_date.replace(tzinfo=timezone.utc) if subscription.freeze_end_date else None
+        freeze_start_date_utc = subscription.freeze_start_date.replace(tzinfo=timezone.utc) if subscription.freeze_start_date else None
+        current_time_utc = datetime.now(timezone.utc)
 
+        if not freeze_end_date_utc or not freeze_start_date_utc: # Дополнительная проверка на None, хотя логика выше должна это покрывать
+             raise HTTPException(status_code=400, detail="Frozen dates are missing unexpectedly")
+
+        freeze_remaining_days = min((freeze_end_date_utc - current_time_utc).days, (freeze_end_date_utc - freeze_start_date_utc).days)
+        if freeze_remaining_days > 0:
+            subscription.end_date = subscription.end_date - timedelta(days=freeze_remaining_days)
+       
         # Убираем заморозку
         subscription.freeze_start_date = None
         subscription.freeze_end_date = None

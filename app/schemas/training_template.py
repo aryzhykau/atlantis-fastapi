@@ -141,7 +141,10 @@ class TrainingTemplateUpdate(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "start_time": "12:00:00"
+                    "day_number": 2,
+                    "start_time": "12:30:00",
+                    "responsible_trainer_id": 1,
+                    "training_type_id": 1
                 }
             ]
         }

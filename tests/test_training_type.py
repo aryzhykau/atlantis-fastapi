@@ -5,7 +5,8 @@ subscription_only_training_type_correct = {
     "price": None,
     "is_subscription_only": True,
     "color": "#000000",
-    "is_active": True
+    "is_active": True,
+    "max_participants": 10
 }
 
 subscription_only_training_type_incorrect = {
@@ -13,7 +14,8 @@ subscription_only_training_type_incorrect = {
     "price": 30,
     "is_subscription_only": True,
     "color": "#000000",
-    "is_active": True
+    "is_active": True,
+    "max_participants": 10
 }
 
 price_only_training_type_correct = {
@@ -21,7 +23,8 @@ price_only_training_type_correct = {
     "price": 30,
     "is_subscription_only": False,
     "color": "#000000",
-    "is_active": True
+    "is_active": True,
+    "max_participants": 12
 }
 
 price_only_training_type_incorrect = {
@@ -29,7 +32,18 @@ price_only_training_type_incorrect = {
     "price": None,
     "is_subscription_only": False,
     "color": "#000000",
+    "is_active": True,
+    "max_participants": 10 
+}
+
+# Фикстура для данных без явного указания max_participants (для проверки дефолтного значения)
+training_type_default_max_participants = {
+    "name": "Default Max Participants",
+    "price": 25,
+    "is_subscription_only": False,
+    "color": "#112233",
     "is_active": True
+    # max_participants не указан, ожидаем значение по умолчанию 4
 }
 
 @pytest.mark.parametrize("invalid_name", [
@@ -70,15 +84,27 @@ def test_invalid_price(client, auth_headers, invalid_price):
     assert response.status_code == 422
 
 def test_create_training_type(client, auth_headers):
+    # Тест с явно указанным max_participants
     response = client.post("/training_types/", json=subscription_only_training_type_correct, headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["name"] == subscription_only_training_type_correct["name"]
-    assert response.json()["is_active"] == subscription_only_training_type_correct["is_active"]
+    data = response.json()
+    assert data["name"] == subscription_only_training_type_correct["name"]
+    assert data["is_active"] == subscription_only_training_type_correct["is_active"]
+    assert data["max_participants"] == subscription_only_training_type_correct["max_participants"]
 
     response = client.post("/training_types/", json=price_only_training_type_correct, headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["name"] == price_only_training_type_correct["name"]
-    assert response.json()["is_active"] == price_only_training_type_correct["is_active"]
+    data = response.json()
+    assert data["name"] == price_only_training_type_correct["name"]
+    assert data["is_active"] == price_only_training_type_correct["is_active"]
+    assert data["max_participants"] == price_only_training_type_correct["max_participants"]
+    
+    # Тест с использованием значения по умолчанию для max_participants
+    response_default = client.post("/training_types/", json=training_type_default_max_participants, headers=auth_headers)
+    assert response_default.status_code == 200
+    data_default = response_default.json()
+    assert data_default["name"] == training_type_default_max_participants["name"]
+    assert data_default["max_participants"] == 4 # Проверяем значение по умолчанию
 
     response = client.post("/training_types/", json=subscription_only_training_type_incorrect, headers=auth_headers)
     assert response.status_code == 422
@@ -87,25 +113,59 @@ def test_create_training_type(client, auth_headers):
     assert response.status_code == 422
 
 def test_get_training_types(client, auth_headers):
-    client.post("/training_types/", json=subscription_only_training_type_correct, headers=auth_headers)
-    client.post("/training_types/", json=price_only_training_type_correct, headers=auth_headers)
+    # Создаем несколько типов тренировок для теста
+    tt1_data = {**subscription_only_training_type_correct, "name": "Yoga Advanced"}
+    tt2_data = {**price_only_training_type_correct, "name": "Crossfit Basic"}
+    
+    client.post("/training_types/", json=tt1_data, headers=auth_headers)
+    client.post("/training_types/", json=tt2_data, headers=auth_headers)
+    
     response = client.get("/training_types/", headers=auth_headers)
     assert response.status_code == 200
-    assert len(response.json()["training_types"]) == 2
+    training_types_list = response.json()["training_types"]
+    assert len(training_types_list) >= 2 # Проверяем, что есть как минимум 2 созданных
+    
+    # Проверяем, что max_participants присутствует в ответе
+    for tt in training_types_list:
+        assert "max_participants" in tt
+        if tt["name"] == tt1_data["name"]:
+            assert tt["max_participants"] == tt1_data["max_participants"]
+        elif tt["name"] == tt2_data["name"]:
+            assert tt["max_participants"] == tt2_data["max_participants"]
 
 def test_get_training_type_by_id(client, auth_headers):
-    client.post("/training_types/", json=subscription_only_training_type_correct, headers=auth_headers)
-    client.post("/training_types/", json=price_only_training_type_correct, headers=auth_headers)
-    response = client.get("/training_types/1", headers=auth_headers)
+    create_response = client.post("/training_types/", json=price_only_training_type_correct, headers=auth_headers)
+    assert create_response.status_code == 200
+    training_type_id = create_response.json()["id"]
+    
+    response = client.get(f"/training_types/{training_type_id}", headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["id"] == 1
+    data = response.json()
+    assert data["id"] == training_type_id
+    assert data["name"] == price_only_training_type_correct["name"]
+    assert data["max_participants"] == price_only_training_type_correct["max_participants"]
 
 def test_update_training_type(client, auth_headers):
-    client.post("/training_types/", json=subscription_only_training_type_correct, headers=auth_headers)
-    client.post("/training_types/", json=price_only_training_type_correct, headers=auth_headers)
-    response = client.patch("/training_types/1", json={"name": "New name"}, headers=auth_headers)
+    create_response = client.post("/training_types/", json=subscription_only_training_type_correct, headers=auth_headers)
+    assert create_response.status_code == 200
+    training_type_id = create_response.json()["id"]
+    
+    update_data = {"name": "New Super Name", "max_participants": 5}
+    response = client.patch(f"/training_types/{training_type_id}", json=update_data, headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["name"] == "New name"
+    data = response.json()
+    assert data["name"] == update_data["name"]
+    assert data["max_participants"] == update_data["max_participants"]
+
+    # Проверка, что другие поля не изменились, если не были переданы в update_data
+    assert data["color"] == subscription_only_training_type_correct["color"]
+
+@pytest.mark.parametrize("invalid_max_participants", [0, -1, -10])
+def test_invalid_max_participants(client, auth_headers, invalid_max_participants):
+    """Тест валидации max_participants (должно быть >= 1)"""
+    data = {**price_only_training_type_correct, "max_participants": invalid_max_participants}
+    response = client.post("/training_types/", json=data, headers=auth_headers)
+    assert response.status_code == 422
 
 def test_deactivate_training_type(client, auth_headers):
     # Создаем тип тренировки

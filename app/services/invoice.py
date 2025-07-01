@@ -65,6 +65,14 @@ class InvoiceService:
         client = self.db.query(User).filter(User.id == client_id).first()
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
+        invoice_status = InvoiceStatus.UNPAID
+        client_balance = client.balance
+        if client_balance >= amount:
+            client.balance -= amount
+            self.db.refresh(client)
+            invoice_status = InvoiceStatus.PAID
+            
+       
 
         # Проверяем существование студента, если указан
         if student_id:
@@ -85,7 +93,7 @@ class InvoiceService:
             type=InvoiceType.SUBSCRIPTION,
             amount=amount,
             description=description,
-            status=InvoiceStatus.UNPAID,
+            status=invoice_status,
             created_by_id=created_by_id,
             is_auto_renewal=is_auto_renewal
         )

@@ -21,7 +21,7 @@ def get_training_type(db: Session, training_type_id: int) -> TrainingType | None
 
 def get_training_types(db: Session, skip: int = 0, limit: int = 10) -> list[TrainingType]:
     """Получает список всех типов тренировок с пагинацией."""
-    return db.query(TrainingType).offset(skip).limit(limit).all()
+    return db.query(TrainingType).order_by(TrainingType.name).offset(skip).limit(limit).all()
 
 
 def update_training_type(

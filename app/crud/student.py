@@ -20,7 +20,7 @@ def get_students(db: Session) -> list[Student]:
 # Получить студентов по ID клиента
 def get_students_by_client_id(db: Session, client_id: int) -> list[Student]:
     """Получает список всех студентов, связанных с указанным клиентом."""
-    return db.query(Student).filter(Student.client_id == client_id).all()
+    return db.query(Student).filter(Student.client_id == client_id).order_by(Student.first_name, Student.last_name).all()
 
 
 # Создать нового студента

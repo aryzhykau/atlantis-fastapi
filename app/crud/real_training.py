@@ -1,7 +1,8 @@
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Tuple
 from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
+import logging
 
 from app.models import (
     RealTraining,
@@ -21,6 +22,8 @@ from app.schemas.real_training_student import (
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_real_trainings_with_students(
@@ -295,13 +298,14 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
     # Получаем даты следующей недели
     today = date.today()
     next_monday = today + timedelta(days=(7 - today.weekday()))
-    next_sunday = next_monday + timedelta(days=6)
     
     # Получаем все шаблоны с активными тренерами и типами тренировок
     templates = db.query(TrainingTemplate).join(
-        TrainingTemplate.responsible_trainer
+        User, TrainingTemplate.responsible_trainer_id == User.id
     ).join(
-        TrainingTemplate.training_type
+        TrainingType, TrainingTemplate.training_type_id == TrainingType.id
+    ).options(
+        selectinload(TrainingTemplate.training_type)
     ).filter(
         and_(
             User.is_active.is_(True),
@@ -309,7 +313,7 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
         )
     ).all()
     
-    created_trainings = []
+    created_trainings_details = []
     created_count = 0
     
     for template in templates:
@@ -325,6 +329,12 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
         ).first()
         
         if not existing_training:
+            if not template.training_type:
+                logger.error(f"Skipping template ID {template.id} due to missing training_type.")
+                continue
+
+            max_participants = template.training_type.max_participants
+
             # Создаем новую тренировку
             new_training = RealTraining(
                 training_date=template_date,
@@ -337,26 +347,44 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
             db.add(new_training)
             db.flush()  # Получаем ID новой тренировки
             
-            # Копируем студентов из шаблона
-            template_students = db.query(TrainingStudentTemplate).filter(
+            # Копируем студентов из шаблона, учитывая start_date и max_participants
+            template_students_query = db.query(TrainingStudentTemplate).filter(
                 and_(
                     TrainingStudentTemplate.training_template_id == template.id,
-                    TrainingStudentTemplate.is_frozen.is_(False)
+                    TrainingStudentTemplate.is_frozen.is_(False),
+                    TrainingStudentTemplate.start_date <= template_date
                 )
-            ).all()
+            ).order_by(
+                TrainingStudentTemplate.start_date.asc(),
+                TrainingStudentTemplate.id.asc()
+            )
             
-            for template_student in template_students:
-                student_training = RealTrainingStudent(
-                    real_training_id=new_training.id,
-                    student_id=template_student.student_id,
-                    template_student_id=template_student.id
-                )
-                db.add(student_training)
+            potential_students = template_students_query.all()
             
-            created_trainings.append(new_training)
+            added_students_count = 0
+            for i, template_student in enumerate(potential_students):
+                if added_students_count < max_participants:
+                    student_training = RealTrainingStudent(
+                        real_training_id=new_training.id,
+                        student_id=template_student.student_id,
+                        template_student_id=template_student.id
+                    )
+                    db.add(student_training)
+                    added_students_count += 1
+                else:
+                    logger.warning(
+                        f"Student ID {template_student.student_id} from template_student_id {template_student.id} "
+                        f"was not added to RealTraining ID {new_training.id} (date: {new_training.training_date}) "
+                        f"for Template ID {template.id} because max_participants ({max_participants}) was reached. "
+                        f"({len(potential_students) - added_students_count} of {len(potential_students)} students not added)."
+                    )
+                    # Прерываем цикл, так как лимит достигнут и список отсортирован
+                    break
+            
+            created_trainings_details.append(new_training)
             created_count += 1
     
     if created_count > 0:
         db.commit()
     
-    return created_count, created_trainings 
+    return created_count, created_trainings_details 

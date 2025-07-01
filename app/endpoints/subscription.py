@@ -137,7 +137,7 @@ def update_auto_renewal(
     return service.update_auto_renewal(
         student_subscription_id=subscription_id,
         is_auto_renew=update.is_auto_renew,
-        updated_by_id=current_user.id
+        updated_by_id=current_user["id"]
     )
 
 
@@ -158,7 +158,7 @@ def freeze_subscription(
         student_subscription_id=subscription_id,
         freeze_start_date=freeze_start_date,
         freeze_duration_days=freeze_duration_days,
-        updated_by_id=current_user.id
+        updated_by_id=current_user["id"]
     )
 
 
@@ -175,5 +175,5 @@ def unfreeze_subscription(
     service = SubscriptionService(db)
     return service.unfreeze_subscription(
         student_subscription_id=subscription_id,
-        updated_by_id=current_user.id
+        updated_by_id=current_user["id"]
     )

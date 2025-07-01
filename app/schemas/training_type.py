@@ -10,6 +10,7 @@ class TrainingTypeBase(BaseModel):
     price: Optional[float] = None
     color: str
     is_active: bool
+    max_participants: int
 
     model_config = {"from_attributes": True}
 
@@ -59,6 +60,15 @@ class TrainingTypeCreate(BaseModel):
             "type": "Поле is_active должно быть булевым значением (true/false)"
         }
     )
+    max_participants: int = Field(
+        default=4,
+        ge=1,
+        description="Максимальное количество участников (минимум 1, по умолчанию 4)",
+        error_messages={
+            "ge": "Максимальное количество участников не может быть меньше 1",
+            "type": "Максимальное количество участников должно быть целым числом"
+        }
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -68,14 +78,16 @@ class TrainingTypeCreate(BaseModel):
                     "is_subscription_only": False,
                     "price": 15.99,
                     "color": "#FFFFFF",
-                    "is_active": True
+                    "is_active": True,
+                    "max_participants": 4
                 },
                 {
                     "name": "Фитнес",
                     "is_subscription_only": True,
                     "price": None,
                     "color": "#000000",
-                    "is_active": True
+                    "is_active": True,
+                    "max_participants": 4
                 },
             ]
         }
@@ -151,6 +163,15 @@ class TrainingTypeUpdate(BaseModel):
             "type": "Поле is_active должно быть булевым значением (true/false)"
         }
     )
+    max_participants: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Максимальное количество участников (минимум 1)",
+        error_messages={
+            "ge": "Максимальное количество участников не может быть меньше 1",
+            "type": "Максимальное количество участников должно быть целым числом"
+        }
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -160,14 +181,16 @@ class TrainingTypeUpdate(BaseModel):
                     "is_subscription_only": True,
                     "price": 19.99,
                     "color": "#000000",
-                    "is_active": True
+                    "is_active": True,
+                    "max_participants": 12
                 },
                 {
                     "name": "Кроссфит",
                     "is_subscription_only": False,
                     "price": 25.00,
                     "color": "#FF5733",
-                    "is_active": False
+                    "is_active": False,
+                    "max_participants": 20
                 },
             ]
         }
