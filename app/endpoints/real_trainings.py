@@ -162,7 +162,7 @@ def update_training_endpoint(
 
 
 # Удаление тренировки
-@router.delete("/{training_id}", response_model=RealTrainingResponse)
+@router.delete("/{training_id}")
 def delete_training_endpoint(
     training_id: int,
     delete_future: bool = False,
@@ -180,15 +180,10 @@ def delete_training_endpoint(
             detail="Только администратор может удалять тренировки"
         )
 
-    training = delete_real_training(
-        db,
-        training_id,
-        delete_future=delete_future,
-        template_id=template_id
-    )
-    if not training:
+    success = delete_real_training(db, training_id)
+    if not success:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
-    return training
+    return {"success": True, "id": training_id, "message": "Real training deleted successfully"}
 
 
 # Добавление студента на тренировку

@@ -27,6 +27,19 @@ def get_training_template_by_id(db: Session, template_id: int):
 
 # Создание нового тренировочного шаблона
 def create_training_template(db: Session, training_template: TrainingTemplateCreate):
+    # Проверяем, нет ли уже шаблона для этого тренера в это время в этот день
+    existing_template = db.query(TrainingTemplate).filter(
+        TrainingTemplate.day_number == training_template.day_number,
+        TrainingTemplate.start_time == training_template.start_time,
+        TrainingTemplate.responsible_trainer_id == training_template.responsible_trainer_id
+    ).first()
+    
+    if existing_template:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Trainer conflict: Trainer with ID {training_template.responsible_trainer_id} already has a training scheduled for day {training_template.day_number} at {training_template.start_time}. A trainer cannot be in two places at the same time."
+        )
+    
     db_template = TrainingTemplate(
         day_number=training_template.day_number,
         start_time=training_template.start_time,
@@ -46,6 +59,28 @@ def update_training_template(db: Session, template_id: int, update_data: Trainin
         return None
     
     update_dict = update_data.model_dump(exclude_unset=True)
+    
+    # Если обновляется день, время или тренер, проверяем конфликты
+    if any(field in update_dict for field in ['day_number', 'start_time', 'responsible_trainer_id']):
+        # Получаем финальные значения после обновления
+        final_day = update_dict.get('day_number', db_template.day_number)
+        final_time = update_dict.get('start_time', db_template.start_time)
+        final_trainer_id = update_dict.get('responsible_trainer_id', db_template.responsible_trainer_id)
+        
+        # Проверяем, нет ли конфликта с другими шаблонами
+        existing_template = db.query(TrainingTemplate).filter(
+            TrainingTemplate.id != template_id,  # Исключаем текущий шаблон
+            TrainingTemplate.day_number == final_day,
+            TrainingTemplate.start_time == final_time,
+            TrainingTemplate.responsible_trainer_id == final_trainer_id
+        ).first()
+        
+        if existing_template:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Trainer conflict: Trainer with ID {final_trainer_id} already has a training scheduled for day {final_day} at {final_time}. A trainer cannot be in two places at the same time."
+            )
+    
     for field, value in update_dict.items():
         setattr(db_template, field, value)
     
@@ -60,9 +95,15 @@ def delete_training_template(db: Session, template_id: int):
     if not db_template:
         return None
     
+    # Сначала удаляем все связанные TrainingStudentTemplate записи
+    db.query(TrainingStudentTemplate).filter(
+        TrainingStudentTemplate.training_template_id == template_id
+    ).delete()
+    
+    # Теперь можем безопасно удалить сам шаблон
     db.delete(db_template)
     db.commit()
-    return db_template
+    return True
 
 
 

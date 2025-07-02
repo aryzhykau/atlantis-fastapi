@@ -76,7 +76,7 @@ def update_training_template_endpoint(
 
 
 # Удаление тренировочного шаблона
-@router.delete("/{template_id}", response_model=TrainingTemplateResponse)
+@router.delete("/{template_id}")
 def delete_training_template_endpoint(
     template_id: int,
     db: Session = Depends(get_db),
@@ -87,4 +87,4 @@ def delete_training_template_endpoint(
     deleted_template = delete_training_template(db=db, template_id=template_id)
     if not deleted_template:
         raise HTTPException(status_code=404, detail="Training template not found")
-    return deleted_template
+    return {"success": True, "id": template_id, "message": "Training template deleted successfully"}
