@@ -192,11 +192,8 @@ class TrainingStudentTemplateCreate(BaseModel):
         description="Дата начала тренировок"
     )
 
-    @field_validator("start_date")
-    def validate_start_date(cls, v: date) -> date:
-        if v < date.today():
-            raise ValueError("Дата начала не может быть в прошлом")
-        return v
+    # Убрали валидацию на "не в прошлом" - start_date может быть исторической 
+    # для корректной работы генерации тренировок и дублирования шаблонов
 
     model_config = ConfigDict(
         json_schema_extra={
