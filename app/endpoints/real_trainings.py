@@ -4,6 +4,7 @@ from datetime import date
 from typing import List, Optional
 
 from app.auth.jwt_handler import verify_jwt_token
+from app.core.security import verify_api_key
 from app.dependencies import get_db
 from app.schemas.real_training import (
     RealTrainingCreate,
@@ -325,25 +326,19 @@ def remove_student_endpoint(
 
 
 # Генерация тренировок на следующую неделю
-@router.post("/generate-next-week", response_model=dict)
+@router.post("/generate-next-week", response_model=dict, dependencies=[Depends(verify_api_key)])
 def generate_next_week_endpoint(
-    current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
     """
     Генерирует тренировки на следующую неделю на основе активных шаблонов.
-    Доступно только для администраторов.
+    Защищен API ключом (передается в заголовке X-API-Key).
     
     Возвращает:
     - Количество созданных тренировок
     - Список созданных тренировок
     - Период, на который созданы тренировки
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администратор может генерировать тренировки"
-        )
 
     try:
         created_count, trainings = generate_next_week_trainings(db)
