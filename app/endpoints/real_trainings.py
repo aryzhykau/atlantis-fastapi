@@ -26,8 +26,6 @@ from app.crud.real_training import (
     create_real_training,
     update_real_training,
     delete_real_training,
-    add_student_to_training,
-    update_student_attendance,
     remove_student_from_training,
     generate_next_week_trainings,
 )
@@ -64,7 +62,7 @@ def get_trainings_endpoint(
 
     # Если текущий пользователь - тренер, он может видеть только свои тренировки
     if current_user["role"] == UserRole.TRAINER:
-        trainer_id = current_user["user_id"]
+        trainer_id = current_user["id"]
 
     if with_students:
         return get_real_trainings_with_students(
@@ -104,12 +102,12 @@ def get_training_endpoint(
     if not training:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
 
-    # Тренер может видеть только свои тренировки
+    # Тренер может видеть только свои тренировки (404 для безопасности)
     if (current_user["role"] == UserRole.TRAINER and 
-        training.responsible_trainer_id != current_user["user_id"]):
+        training.responsible_trainer_id != current_user["id"]):
         raise HTTPException(
-            status_code=403,
-            detail="У вас нет доступа к этой тренировке"
+            status_code=404,
+            detail="Тренировка не найдена"
         )
 
     return training
@@ -195,35 +193,27 @@ def add_student_endpoint(
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
-    """Добавляет студента на тренировку."""
+    """Добавляет студента на тренировку, используя сервисный слой."""
     if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
         raise HTTPException(
             status_code=403,
             detail="Только администраторы и тренеры могут добавлять студентов"
         )
 
+    service = RealTrainingService(db)
+    # Проверка прав тренера внутри сервиса не нужна, т.к. это логика эндпоинта
     training = get_real_training(db, training_id)
     if not training:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
 
-    # Тренер может добавлять студентов только на свои тренировки
     if (current_user["role"] == UserRole.TRAINER and 
-        training.responsible_trainer_id != current_user["user_id"]):
+        training.responsible_trainer_id != current_user["id"]):
         raise HTTPException(
             status_code=403,
             detail="Вы можете добавлять студентов только на свои тренировки"
         )
 
-    try:
-        student = add_student_to_training(db, training_id, student_data)
-        if not student:
-            raise HTTPException(
-                status_code=400,
-                detail="Не удалось добавить студента на тренировку"
-            )
-        return student
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return service.add_student_to_training(training_id, student_data)
 
 
 # Отметка посещаемости студента
@@ -238,41 +228,32 @@ def update_attendance_endpoint(
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
-    """
-    Обновляет статус посещения студента.
-    При отмене автоматически проверяется необходимость оплаты штрафа.
-    """
+    """Обновляет статус посещения студента, используя сервисный слой."""
     if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
         raise HTTPException(
             status_code=403,
             detail="Только администраторы и тренеры могут отмечать посещаемость"
         )
 
+    # Проверка прав тренера
     training = get_real_training(db, training_id)
     if not training:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
 
-    # Тренер может отмечать посещаемость только на своих тренировках
     if (current_user["role"] == UserRole.TRAINER and 
-        training.responsible_trainer_id != current_user["user_id"]):
+        training.responsible_trainer_id != current_user["id"]):
         raise HTTPException(
             status_code=403,
             detail="Вы можете отмечать посещаемость только на своих тренировках"
         )
 
-    student = update_student_attendance(
-        db,
-        training_id,
-        student_id,
-        attendance_data,
-        trainer_id=current_user["user_id"]
+    service = RealTrainingService(db)
+    return service.update_student_attendance(
+        training_id=training_id,
+        student_id=student_id,
+        update_data=attendance_data,
+        marker_id=current_user["id"]
     )
-    if not student:
-        raise HTTPException(
-            status_code=404,
-            detail="Студент не найден на этой тренировке"
-        )
-    return student
 
 
 # Удаление студента с тренировки
@@ -304,7 +285,7 @@ def remove_student_endpoint(
 
     # Тренер может удалять студентов только со своих тренировок
     if (current_user["role"] == UserRole.TRAINER and 
-        training.responsible_trainer_id != current_user["user_id"]):
+        training.responsible_trainer_id != current_user["id"]):
         raise HTTPException(
             status_code=403,
             detail="Вы можете удалять студентов только со своих тренировок"
@@ -400,7 +381,7 @@ async def cancel_student_endpoint(
 
     # Тренер может отменять участие только на своих тренировках
     if (current_user["role"] == UserRole.TRAINER and 
-        training.responsible_trainer_id != current_user["user_id"]):
+        training.responsible_trainer_id != current_user["id"]):
         raise HTTPException(
             status_code=403,
             detail="Вы можете отменять участие только на своих тренировках"

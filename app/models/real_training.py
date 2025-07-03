@@ -10,8 +10,17 @@ from enum import Enum
 SAFE_CANCELLATION_HOURS = 24
 
 class AttendanceStatus(str, Enum):
-    PRESENT = "PRESENT"
-    ABSENT = "ABSENT"
+    # Базовые статусы посещения
+    PRESENT = "PRESENT"              # Присутствовал
+    ABSENT = "ABSENT"                # Отсутствовал (не пришел)
+    
+    # Статусы отмены
+    CANCELLED_SAFE = "CANCELLED_SAFE"         # Отменен своевременно (>12ч, без штрафа)
+    CANCELLED_PENALTY = "CANCELLED_PENALTY"   # Отменен поздно (<12ч, со штрафом)
+    
+    # Дополнительные статусы
+    REGISTERED = "REGISTERED"        # Зарегистрирован, ждет тренировки
+    WAITLIST = "WAITLIST"           # В листе ожидания (если есть ограничения)
 
 class RealTraining(Base):
     __tablename__ = "real_trainings"

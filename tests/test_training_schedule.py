@@ -114,6 +114,101 @@ class TestTrainingTemplate:
         template = get_training_template_by_id(db_session, test_template.id)
         assert template is None
 
+    def test_create_conflicting_templates_should_fail(self, db_session: Session, test_trainer: User, test_training_type: TrainingType):
+        """
+        Тест: Нельзя создать два шаблона для одного тренера в одно время в один день недели.
+        Один тренер не может быть в двух местах одновременно!
+        """
+        from fastapi import HTTPException
+        
+        # Создаем первый шаблон
+        template_data_1 = TrainingTemplateCreate(
+            day_number=1,  # Понедельник
+            start_time=time(10, 0),  # 10:00
+            responsible_trainer_id=test_trainer.id,
+            training_type_id=test_training_type.id
+        )
+        first_template = create_training_template(db_session, template_data_1)
+        assert first_template is not None
+        
+        # Пытаемся создать второй шаблон для того же тренера в то же время в тот же день
+        template_data_2 = TrainingTemplateCreate(
+            day_number=1,  # Понедельник (тот же день)
+            start_time=time(10, 0),  # 10:00 (то же время)
+            responsible_trainer_id=test_trainer.id,  # Тот же тренер
+            training_type_id=test_training_type.id  # Может быть даже другой тип тренировки
+        )
+        
+        # Это должно вызвать ошибку!
+        with pytest.raises(HTTPException, match="Trainer conflict"):
+            create_training_template(db_session, template_data_2)
+
+    def test_create_non_conflicting_templates_should_succeed(self, db_session: Session, test_trainer: User, test_training_type: TrainingType):
+        """
+        Тест: Можно создавать шаблоны для одного тренера в разное время или в разные дни.
+        """
+        # Создаем шаблон в понедельник в 10:00
+        template_data_1 = TrainingTemplateCreate(
+            day_number=1,  # Понедельник
+            start_time=time(10, 0),  # 10:00
+            responsible_trainer_id=test_trainer.id,
+            training_type_id=test_training_type.id
+        )
+        first_template = create_training_template(db_session, template_data_1)
+        assert first_template is not None
+        
+        # Создаем шаблон в понедельник в 12:00 (другое время) - должно пройти
+        template_data_2 = TrainingTemplateCreate(
+            day_number=1,  # Понедельник (тот же день)
+            start_time=time(12, 0),  # 12:00 (другое время)
+            responsible_trainer_id=test_trainer.id,  # Тот же тренер
+            training_type_id=test_training_type.id
+        )
+        second_template = create_training_template(db_session, template_data_2)
+        assert second_template is not None
+        
+        # Создаем шаблон во вторник в 10:00 (другой день) - должно пройти
+        template_data_3 = TrainingTemplateCreate(
+            day_number=2,  # Вторник (другой день)
+            start_time=time(10, 0),  # 10:00 (то же время, но другой день)
+            responsible_trainer_id=test_trainer.id,  # Тот же тренер
+            training_type_id=test_training_type.id
+        )
+        third_template = create_training_template(db_session, template_data_3)
+        assert third_template is not None
+
+    def test_update_template_conflict_should_fail(self, db_session: Session, test_trainer: User, test_training_type: TrainingType):
+        """
+        Тест: Нельзя обновить шаблон так, чтобы создать конфликт с существующим шаблоном.
+        """
+        from fastapi import HTTPException
+        
+        # Создаем два шаблона в разное время
+        template_data_1 = TrainingTemplateCreate(
+            day_number=1,  # Понедельник
+            start_time=time(10, 0),  # 10:00
+            responsible_trainer_id=test_trainer.id,
+            training_type_id=test_training_type.id
+        )
+        first_template = create_training_template(db_session, template_data_1)
+        
+        template_data_2 = TrainingTemplateCreate(
+            day_number=1,  # Понедельник 
+            start_time=time(12, 0),  # 12:00 (другое время)
+            responsible_trainer_id=test_trainer.id,
+            training_type_id=test_training_type.id
+        )
+        second_template = create_training_template(db_session, template_data_2)
+        
+        # Пытаемся обновить второй шаблон, чтобы он конфликтовал с первым
+        update_data = TrainingTemplateUpdate(
+            start_time=time(10, 0)  # Меняем время на 10:00 - конфликт с первым шаблоном!
+        )
+        
+        # Это должно вызвать ошибку!
+        with pytest.raises(HTTPException, match="Trainer conflict"):
+            update_training_template(db_session, second_template.id, update_data)
+
 
 class TestTrainingStudentTemplate:
     def test_create_student_template(

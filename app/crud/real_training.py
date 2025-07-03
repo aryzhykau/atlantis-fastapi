@@ -12,6 +12,9 @@ from app.models import (
     User,
     TrainingType,
     Student,
+    StudentSubscription,
+    Invoice,
+    InvoiceType,
 )
 from app.models.real_training import SAFE_CANCELLATION_HOURS, AttendanceStatus
 from app.schemas.real_training import (
@@ -196,23 +199,22 @@ def get_student_real_trainings(
     return query.order_by(RealTraining.training_date, RealTraining.start_time).all()
 
 
-def add_student_to_training(
+def add_student_to_training_db(
     db: Session,
     training_id: int,
     student_data: RealTrainingStudentCreate,
-) -> Optional[RealTrainingStudent]:
+) -> RealTrainingStudent:
     """
-    Добавление студента на тренировку
+    Простое добавление студента на тренировку в БД.
+    Предполагается, что все бизнес-проверки уже выполнены в сервисном слое.
     """
-    # Проверяем активность студента
-    student = db.query(Student).filter(Student.id == student_data.student_id).first()
-    if not student or not student.is_active:
-        raise ValueError("Cannot add inactive student to training")
-
+    from app.models.real_training import AttendanceStatus
+    
     db_student = RealTrainingStudent(
         real_training_id=training_id,
         student_id=student_data.student_id,
         template_student_id=student_data.template_student_id,
+        status=AttendanceStatus.REGISTERED  # По умолчанию - зарегистрирован
     )
     db.add(db_student)
     db.commit()
@@ -220,47 +222,28 @@ def add_student_to_training(
     return db_student
 
 
-def update_student_attendance(
-    db: Session,
-    training_id: int,
-    student_id: int,
-    update_data: RealTrainingStudentUpdate,
-    trainer_id: int,
+def get_real_training_student(
+    db: Session, training_id: int, student_id: int
 ) -> Optional[RealTrainingStudent]:
-    """
-    Обновление статуса посещения или отмена записи студента
-    """
-    db_student = db.query(RealTrainingStudent).filter(
-        and_(
-            RealTrainingStudent.real_training_id == training_id,
-            RealTrainingStudent.student_id == student_id,
-        )
+    return db.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == training_id,
+        RealTrainingStudent.student_id == student_id
     ).first()
-    if not db_student:
-        return None
 
-    # Получаем тренировку для проверки времени отмены
-    db_training = get_real_training(db, training_id)
-    if not db_training:
-        return None
 
-    update_dict = update_data.model_dump(exclude_unset=True)
-
-    # Если устанавливается статус
-    if update_data.status:
+def update_student_attendance_db(
+    db: Session,
+    db_student: RealTrainingStudent,
+    update_dict: dict,
+    marker_id: int,
+) -> RealTrainingStudent:
+    """
+    Простое обновление статуса посещения в БД.
+    Предполагается, что все бизнес-проверки уже выполнены в сервисном слое.
+    """
+    if "status" in update_dict:
         update_dict["attendance_marked_at"] = datetime.utcnow()
-        update_dict["attendance_marked_by_id"] = trainer_id
-
-        # Если отмена, проверяем необходимость оплаты
-        if update_data.status == AttendanceStatus.CANCELLED:
-            # Используем фиксированное значение для безопасной отмены
-            # Если указано время уведомления, используем его
-            notification_time = update_data.notification_time or datetime.utcnow()
-            training_datetime = datetime.combine(db_training.training_date, db_training.start_time)
-            
-            # Если отмена произошла позже безопасного периода
-            hours_before = (training_datetime - notification_time).total_seconds() / 3600
-            update_dict["requires_payment"] = hours_before < SAFE_CANCELLATION_HOURS
+        update_dict["attendance_marked_by_id"] = marker_id
 
     for field, value in update_dict.items():
         setattr(db_student, field, value)
@@ -348,7 +331,9 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
             db.flush()  # Получаем ID новой тренировки
             
             # Копируем студентов из шаблона, учитывая start_date и max_participants
-            template_students_query = db.query(TrainingStudentTemplate).filter(
+            template_students_query = db.query(TrainingStudentTemplate).options(
+                joinedload(TrainingStudentTemplate.student)
+            ).filter(
                 and_(
                     TrainingStudentTemplate.training_template_id == template.id,
                     TrainingStudentTemplate.is_frozen.is_(False),
@@ -362,24 +347,44 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
             potential_students = template_students_query.all()
             
             added_students_count = 0
-            for i, template_student in enumerate(potential_students):
-                if added_students_count < max_participants:
-                    student_training = RealTrainingStudent(
-                        real_training_id=new_training.id,
-                        student_id=template_student.student_id,
-                        template_student_id=template_student.id
-                    )
-                    db.add(student_training)
-                    added_students_count += 1
-                else:
+            for template_student in potential_students:
+                if added_students_count >= max_participants:
                     logger.warning(
                         f"Student ID {template_student.student_id} from template_student_id {template_student.id} "
                         f"was not added to RealTraining ID {new_training.id} (date: {new_training.training_date}) "
-                        f"for Template ID {template.id} because max_participants ({max_participants}) was reached. "
-                        f"({len(potential_students) - added_students_count} of {len(potential_students)} students not added)."
+                        f"for Template ID {template.id} because max_participants ({max_participants}) was reached."
                     )
-                    # Прерываем цикл, так как лимит достигнут и список отсортирован
-                    break
+                    continue
+
+                can_add_student = False
+                if not template.training_type.is_subscription_only:
+                    can_add_student = True
+                else:
+                    # Ищем активный абонемент у студента на дату будущей тренировки
+                    active_subscription = db.query(StudentSubscription).filter(
+                        StudentSubscription.student_id == template_student.student_id,
+                        StudentSubscription.is_active == True,
+                        StudentSubscription.start_date <= template_date,
+                        StudentSubscription.end_date >= template_date,
+                    ).first()
+
+                    if active_subscription and (active_subscription.sessions_left > 0 or active_subscription.is_auto_renew):
+                        can_add_student = True
+                    else:
+                         logger.warning(
+                            f"Student ID {template_student.student_id} was not added to RealTraining ID {new_training.id} "
+                            f"for Template ID {template.id}. Reason: No active subscription with sessions left or auto-renew enabled."
+                        )
+
+                if can_add_student:
+                    student_training = RealTrainingStudent(
+                        real_training_id=new_training.id,
+                        student_id=template_student.student_id,
+                        template_student_id=template_student.id,
+                        status=AttendanceStatus.REGISTERED  # По умолчанию - зарегистрирован
+                    )
+                    db.add(student_training)
+                    added_students_count += 1
             
             created_trainings_details.append(new_training)
             created_count += 1

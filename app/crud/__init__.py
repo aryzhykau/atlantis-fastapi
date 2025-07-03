@@ -11,8 +11,10 @@ from .real_training import (
     # Операции со студентами на тренировках
     get_real_training_students,
     get_student_real_trainings,
-    add_student_to_training,
-    update_student_attendance,
     remove_student_from_training,
     
+)
+from .student import (
+    create_student,
+    # ... existing code ...
 )

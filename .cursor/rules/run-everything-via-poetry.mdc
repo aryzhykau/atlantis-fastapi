@@ -1,6 +1,0 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-If you need to run tests or app or migrations use poetry for it

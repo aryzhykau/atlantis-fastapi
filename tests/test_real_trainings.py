@@ -1,4 +1,5 @@
 from datetime import date, time, datetime, timedelta
+import json
 import pytest
 from fastapi import status
 from sqlalchemy import text
@@ -12,6 +13,9 @@ from app.models import (
     TrainingStudentTemplate,
     RealTraining,
     RealTrainingStudent,
+    StudentSubscription,
+    Invoice,
+    InvoiceType
 )
 from app.models.user import UserRole
 from app.crud.real_training import generate_next_week_trainings
@@ -122,6 +126,27 @@ def template_with_student(db_session: Session, training_template, student):
     # Удаляем привязку студента после всех зависимых объектов
     db_session.execute(text("DELETE FROM real_training_students"))
     db_session.execute(text("DELETE FROM training_client_templates WHERE id = :id"), {"id": template_student.id})
+    db_session.commit()
+
+
+@pytest.fixture
+def student_subscription(db_session: Session, student):
+    """Создает активный абонемент для студента"""
+    subscription = StudentSubscription(
+        student_id=student.id,
+        start_date=date.today() - timedelta(days=30),  # Начался месяц назад
+        end_date=date.today() + timedelta(days=30),    # Заканчивается через месяц
+        sessions_left=10,  # 10 занятий осталось
+        is_active=True,
+        is_auto_renew=False
+    )
+    db_session.add(subscription)
+    db_session.commit()
+    db_session.refresh(subscription)
+    yield subscription
+    # Удаляем абонемент после всех зависимых объектов
+    db_session.execute(text("DELETE FROM real_training_students"))
+    db_session.execute(text("DELETE FROM student_subscriptions WHERE id = :id"), {"id": subscription.id})
     db_session.commit()
 
 
@@ -318,3 +343,302 @@ def test_cancel_already_cancelled_training(client, auth_headers, training_templa
         headers=auth_headers
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST 
+
+
+# Тесты для отмены студентов
+def test_cancel_student_safe_cancellation(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
+    """Тест безопасной отмены студента (>12 часов до начала) - занятие НЕ должно списываться"""
+    # Создаем тренировку на завтра (безопасная отмена)
+    tomorrow = date.today() + timedelta(days=1)
+    training = RealTraining(
+        training_date=tomorrow,
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента на тренировку с привязкой к абонементу
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        subscription_id=student_subscription.id
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Запоминаем количество занятий до отмены
+    sessions_before = student_subscription.sessions_left
+    
+    # Отменяем студента (безопасная отмена)
+    notification_time = datetime.now() - timedelta(hours=13)  # 13 часов до начала
+    response = client.request(
+        "DELETE",
+        f"/real-trainings/{training.id}/students/{template_with_student.student_id}/cancel",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        json={
+            "notification_time": notification_time.isoformat(),
+            "reason": "Safe cancellation test"
+        }
+    )
+    
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    
+    # Проверяем, что студент удален из тренировки
+    remaining_students = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == training.id
+    ).all()
+    assert len(remaining_students) == 0
+    
+    # Проверяем, что занятие НЕ списалось с абонемента (безопасная отмена)
+    db_session.refresh(student_subscription)
+    assert student_subscription.sessions_left == sessions_before
+
+
+def test_cancel_student_unsafe_cancellation(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
+    """Тест небезопасной отмены студента (<12 часов до начала) - занятие должно списываться как штраф"""
+    # Создаем тренировку на сегодня (небезопасная отмена)
+    today = date.today()
+    training = RealTraining(
+        training_date=today,
+        start_time=time(20, 0),  # 20:00 сегодня
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента на тренировку с привязкой к абонементу
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        subscription_id=student_subscription.id
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Запоминаем количество занятий до отмены
+    sessions_before = student_subscription.sessions_left
+    
+    # Отменяем студента (небезопасная отмена)
+    notification_time = datetime.now() - timedelta(hours=2)  # 2 часа до начала
+    response = client.request(
+        "DELETE",
+        f"/real-trainings/{training.id}/students/{template_with_student.student_id}/cancel",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        json={
+            "notification_time": notification_time.isoformat(),
+            "reason": "Unsafe cancellation test"
+        }
+    )
+    
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    
+    # Проверяем, что студент удален из тренировки
+    remaining_students = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == training.id
+    ).all()
+    assert len(remaining_students) == 0
+    
+    # Проверяем, что занятие списалось с абонемента как штраф (небезопасная отмена)
+    db_session.refresh(student_subscription)
+    assert student_subscription.sessions_left == sessions_before - 1
+
+
+def test_cancel_student_unsafe_cancellation_no_subscription(client, auth_headers, training_template, template_with_student, db_session):
+    """Тест небезопасной отмены студента без абонемента - должен создаться штрафной инвойс"""
+    # Создаем тренировку на сегодня (небезопасная отмена)
+    today = date.today()
+    training = RealTraining(
+        training_date=today,
+        start_time=time(20, 0),  # 20:00 сегодня
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента на тренировку БЕЗ абонемента
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        subscription_id=None  # Нет абонемента
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Отменяем студента (небезопасная отмена)
+    notification_time = datetime.now() - timedelta(hours=2)  # 2 часа до начала
+    response = client.request(
+        "DELETE",
+        f"/real-trainings/{training.id}/students/{template_with_student.student_id}/cancel",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        json={
+            "notification_time": notification_time.isoformat(),
+            "reason": "Unsafe cancellation without subscription"
+        }
+    )
+    
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    
+    # Проверяем, что студент удален из тренировки
+    remaining_students = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == training.id
+    ).all()
+    assert len(remaining_students) == 0
+    
+    # Проверяем, что создался штрафной инвойс
+    penalty_invoices = db_session.query(Invoice).filter(
+        Invoice.student_id == template_with_student.student_id,
+        Invoice.invoice_type == InvoiceType.LATE_CANCELLATION_FEE
+    ).all()
+    assert len(penalty_invoices) == 1
+    assert penalty_invoices[0].amount == training.training_type.price
+
+
+def test_cancel_student_multiple_cancellations(client, auth_headers, training_template, template_with_student, db_session):
+    """Тест множественных отмен студента (отмены не ограничены)"""
+    # Создаем 5 тренировок в текущем месяце и отменяем студента с каждой
+    today = date.today()
+    trainings = []
+    
+    for i in range(5):
+        training = RealTraining(
+            training_date=today + timedelta(days=i),
+            start_time=time(20, 0),
+            responsible_trainer_id=training_template.responsible_trainer_id,
+            training_type_id=training_template.training_type_id,
+            template_id=training_template.id,
+            is_template_based=True
+        )
+        db_session.add(training)
+        db_session.commit()
+        db_session.refresh(training)
+        trainings.append(training)
+        
+        # Добавляем студента
+        student_training = RealTrainingStudent(
+            real_training_id=training.id,
+            student_id=template_with_student.student_id
+        )
+        db_session.add(student_training)
+        db_session.commit()
+    
+    # Отменяем студента со всех 5 тренировок (должно пройти, так как отмены не ограничены)
+    for i in range(5):
+        notification_time = datetime.now() - timedelta(hours=2)
+        response = client.request(
+            "DELETE",
+            f"/real-trainings/{trainings[i].id}/students/{template_with_student.student_id}/cancel",
+            headers={**auth_headers, "Content-Type": "application/json"},
+            json={
+                "notification_time": notification_time.isoformat(),
+                "reason": f"Cancellation {i+1}"
+            }
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+    
+    # Проверяем, что все студенты удалены из тренировок
+    for training in trainings:
+        remaining_students = db_session.query(RealTrainingStudent).filter(
+            RealTrainingStudent.real_training_id == training.id
+        ).all()
+        assert len(remaining_students) == 0
+
+
+def test_cancel_student_not_found(client, auth_headers, training_template, db_session):
+    """Тест отмены несуществующего студента"""
+    # Создаем тренировку
+    tomorrow = date.today() + timedelta(days=1)
+    training = RealTraining(
+        training_date=tomorrow,
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Пытаемся отменить несуществующего студента
+    notification_time = datetime.now() - timedelta(hours=13)
+    response = client.request(
+        "DELETE",
+        f"/real-trainings/{training.id}/students/999/cancel",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        json={
+            "notification_time": notification_time.isoformat(),
+            "reason": "Non-existent student"
+        }
+    )
+    
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_cancel_student_training_not_found(client, auth_headers, template_with_student):
+    """Тест отмены студента с несуществующей тренировки"""
+    notification_time = datetime.now() - timedelta(hours=13)
+    response = client.request(
+        "DELETE",
+        f"/real-trainings/999/students/{template_with_student.student_id}/cancel",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        json={
+            "notification_time": notification_time.isoformat(),
+            "reason": "Non-existent training"
+        }
+    )
+    
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_cancel_student_unauthorized(client, training_template, template_with_student, db_session):
+    """Тест отмены студента без авторизации"""
+    # Создаем тренировку
+    tomorrow = date.today() + timedelta(days=1)
+    training = RealTraining(
+        training_date=tomorrow,
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Пытаемся отменить без авторизации
+    notification_time = datetime.now() - timedelta(hours=13)
+    response = client.request(
+        "DELETE",
+        f"/real-trainings/{training.id}/students/{template_with_student.student_id}/cancel",
+        headers={"Content-Type": "application/json"},
+        json={
+            "notification_time": notification_time.isoformat(),
+            "reason": "Unauthorized cancellation"
+        }
+    )
+    
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
