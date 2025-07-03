@@ -382,6 +382,34 @@ class PaymentService:
             PaymentHistory.client_id == client_id
         ).order_by(desc(PaymentHistory.created_at)).offset(skip).limit(limit).all()
 
+    def get_payments_with_filters(
+        self,
+        user_id: int,
+        registered_by_me: bool = False,
+        period: str = "week"
+    ) -> List[Payment]:
+        """
+        Получение платежей с фильтрацией по регистрировавшему и периоду
+        
+        Args:
+            user_id: ID пользователя (тренера/админа)
+            registered_by_me: Если True, возвращает только платежи зарегистрированные этим пользователем
+            period: Период для фильтрации (week/month/3months)
+        """
+        # Валидация периода
+        if period not in ["week", "month", "3months"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid period. Must be 'week', 'month' or '3months'"
+            )
+        
+        return crud.get_payments_with_filters(
+            self.db,
+            user_id=user_id,
+            registered_by_me=registered_by_me,
+            period=period
+        )
+
     def register_training_payment(
         self,
         client_id: int,

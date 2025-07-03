@@ -46,6 +46,7 @@ class StudentCreate(BaseModel):
 
 
 class StudentUser(BaseModel):
+    id: int
     first_name: str
     last_name: str
     phone: str

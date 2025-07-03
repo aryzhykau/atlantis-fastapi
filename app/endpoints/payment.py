@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
@@ -91,4 +91,28 @@ def get_client_balance(
     service = PaymentService(db)
     service.validate_admin_or_trainer(current_user["id"])
     balance = service.get_client_balance(client_id)
-    return ClientBalanceResponse(client_id=client_id, balance=balance) 
+    return ClientBalanceResponse(client_id=client_id, balance=balance)
+
+
+@router.get("/filtered", response_model=List[PaymentResponse])
+def get_filtered_payments(
+    registered_by_me: bool = Query(False, description="Только платежи текущего пользователя"),
+    period: str = Query("week", description="Период: week/month/3months"),
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка платежей с фильтрацией.
+    Доступно админам и тренерам.
+    
+    Args:
+        registered_by_me: Если True, возвращает только платежи зарегистрированные текущим пользователем
+        period: Период для фильтрации (week/month/3months)
+    """
+    service = PaymentService(db)
+    service.validate_admin_or_trainer(current_user["id"])
+    return service.get_payments_with_filters(
+        user_id=current_user["id"],
+        registered_by_me=registered_by_me,
+        period=period
+    ) 

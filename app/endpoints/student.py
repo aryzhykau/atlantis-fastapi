@@ -12,6 +12,8 @@ from app.crud.student import (create_student, get_students, get_student_by_id,
                               update_student, update_student_status, get_students_by_client_id)
 from app.models.user import User
 from app.models.payment_history import PaymentHistory
+from app.models.student import Student
+from app.models.real_training import RealTraining, RealTrainingStudent
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
@@ -172,3 +174,38 @@ def get_student_payments_endpoint(
     ).order_by(desc(PaymentHistory.created_at)).all()
 
     return payments
+
+
+@router.get("/trainer/{trainer_id}", response_model=list[StudentResponse])
+def get_students_by_trainer_endpoint(
+    trainer_id: int,
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """
+    Получение всех активных студентов для регистрации платежей
+    Доступно только тренерам и админам
+    """
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if current_user["role"] == UserRole.TRAINER and current_user["id"] != trainer_id:
+        raise HTTPException(status_code=403, detail="Можно смотреть только своих студентов")
+    
+    # Получаем всех активных студентов
+    students = (
+        db.query(Student)
+        .filter(Student.is_active == True)
+        .filter(Student.deactivation_date.is_(None))
+        .order_by(Student.first_name, Student.last_name)
+        .all()
+    )
+    
+    # Отладка: смотрим структуру данных
+    print(f"Found {len(students)} students")
+    if students:
+        first_student = students[0]
+        print(f"First student: {first_student}")
+        print(f"First student client: {first_student.client}")
+        print(f"First student client_id: {first_student.client_id}")
+    
+    return students
