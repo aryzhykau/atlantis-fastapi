@@ -434,4 +434,72 @@ class PaymentService:
             amount=amount,
             registered_by_id=registered_by_id,
             description=description
-        ) 
+        )
+
+    def get_payment_history_with_filters(
+        self,
+        user_id: int,
+        filters: "PaymentHistoryFilterRequest"
+    ) -> dict:
+        """
+        Получение истории платежей с фильтрами и пагинацией
+        Доступно только для админов
+        
+        Args:
+            user_id: ID пользователя (админа)
+            filters: Параметры фильтрации
+            
+        Returns:
+            Словарь с данными истории и пагинацией
+        """
+        # Проверяем права доступа (только админы)
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user or user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can view payment history"
+            )
+
+        # Валидация параметров фильтрации
+        if filters.limit > 1000:
+            raise HTTPException(
+                status_code=400,
+                detail="Limit cannot exceed 1000"
+            )
+        
+        if filters.skip < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Skip cannot be negative"
+            )
+        
+        if filters.amount_min is not None and filters.amount_max is not None:
+            if filters.amount_min > filters.amount_max:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Minimum amount cannot be greater than maximum amount"
+                )
+        
+        if filters.date_from and filters.date_to:
+            if filters.date_from > filters.date_to:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Start date cannot be later than end date"
+                )
+
+        # Получаем данные через CRUD
+        from app.crud import payment as crud
+        history_items, total_count = crud.get_payment_history_filtered(
+            self.db, filters
+        )
+
+        # Формируем ответ
+        has_more = (filters.skip + filters.limit) < total_count
+        
+        return {
+            "items": history_items,
+            "total": total_count,
+            "skip": filters.skip,
+            "limit": filters.limit,
+            "has_more": has_more
+        } 

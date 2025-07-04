@@ -44,7 +44,9 @@ def verify_jwt_token(token: str = Depends(oauth2_scheme_access)):
 
         logger.debug(f"Token payload: {payload}")
         # Return payload details (like email, role, id) on success
-        return {"email": payload["sub"], "role": payload["role"], "id": payload["id"]}
+        # Handle both "sub" and "email" fields for backward compatibility
+        email = payload.get("sub") or payload.get("email")
+        return {"email": email, "role": payload["role"], "id": payload["id"]}
 
     except JWTError as e:
         print("JWTError exception:")

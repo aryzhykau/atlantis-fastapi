@@ -1046,4 +1046,405 @@ class TestPaymentEndpoints:
             headers=auth_headers
         )
         assert response.status_code == 200
-        assert response.json()["balance"] == payment_amount 
+        assert response.json()["balance"] == payment_amount
+
+    def test_get_payment_history_endpoint(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест эндпоинта получения истории платежей"""
+        service = PaymentService(db_session)
+        
+        # Создаем несколько платежей для создания истории
+        for i in range(3):
+            service.register_payment(
+                client_id=test_client.id,
+                amount=100.0 + i * 50,
+                description=f"Test payment {i+1}",
+                registered_by_id=test_admin.id
+            )
+        
+        # Отменяем один платеж для создания записи отмены
+        payments = service.get_client_payments(test_client.id)
+        service.cancel_payment(
+            payment_id=payments[0].id,
+            cancelled_by_id=test_admin.id,
+            cancellation_reason="Test cancellation"
+        )
+        
+        # Тестируем базовый запрос без фильтров
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "items" in data
+        assert "total" in data
+        assert "skip" in data
+        assert "limit" in data
+        assert "has_more" in data
+        assert len(data["items"]) > 0
+        assert data["total"] > 0
+
+    def test_get_payment_history_with_filters(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест фильтрации истории платежей"""
+        service = PaymentService(db_session)
+        
+        # Создаем платежи с разными суммами
+        service.register_payment(
+            client_id=test_client.id,
+            amount=50.0,
+            description="Small payment",
+            registered_by_id=test_admin.id
+        )
+        
+        service.register_payment(
+            client_id=test_client.id,
+            amount=200.0,
+            description="Large payment",
+            registered_by_id=test_admin.id
+        )
+        
+        # Тестируем фильтр по минимальной сумме
+        response = client.post(
+            "/payments/history",
+            json={
+                "amount_min": 100.0,
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) > 0
+        
+        # Проверяем, что все суммы >= 100
+        for item in data["items"]:
+            assert item["amount"] >= 100.0
+
+    def test_get_payment_history_by_operation_type(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест фильтрации по типу операции"""
+        service = PaymentService(db_session)
+        
+        # Создаем платеж
+        payment = service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Test payment",
+            registered_by_id=test_admin.id
+        )
+        
+        # Отменяем платеж
+        service.cancel_payment(
+            payment_id=payment.id,
+            cancelled_by_id=test_admin.id,
+            cancellation_reason="Test cancellation"
+        )
+        
+        # Тестируем фильтр по типу операции PAYMENT
+        response = client.post(
+            "/payments/history",
+            json={
+                "operation_type": "PAYMENT",
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) > 0
+        
+        # Проверяем, что все записи имеют тип PAYMENT
+        for item in data["items"]:
+            assert item["operation_type"] == "PAYMENT"
+        
+        # Тестируем фильтр по типу операции CANCELLATION
+        response = client.post(
+            "/payments/history",
+            json={
+                "operation_type": "CANCELLATION",
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) > 0
+        
+        # Проверяем, что все записи имеют тип CANCELLATION
+        for item in data["items"]:
+            assert item["operation_type"] == "CANCELLATION"
+
+    def test_get_payment_history_by_client(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест фильтрации по клиенту"""
+        service = PaymentService(db_session)
+        
+        # Создаем платеж для тестового клиента
+        service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Test payment",
+            registered_by_id=test_admin.id
+        )
+        
+        # Тестируем фильтр по клиенту
+        response = client.post(
+            "/payments/history",
+            json={
+                "client_id": test_client.id,
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) > 0
+        
+        # Проверяем, что все записи принадлежат указанному клиенту
+        for item in data["items"]:
+            assert item["client_id"] == test_client.id
+
+    def test_get_payment_history_pagination(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест пагинации истории платежей"""
+        service = PaymentService(db_session)
+        
+        # Создаем несколько платежей
+        for i in range(5):
+            service.register_payment(
+                client_id=test_client.id,
+                amount=100.0,
+                description=f"Test payment {i+1}",
+                registered_by_id=test_admin.id
+            )
+        
+        # Тестируем первую страницу
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": 0,
+                "limit": 2
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2
+        assert data["skip"] == 0
+        assert data["limit"] == 2
+        assert data["has_more"] == True
+        
+        # Тестируем вторую страницу
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": 2,
+                "limit": 2
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2
+        assert data["skip"] == 2
+        assert data["limit"] == 2
+
+    def test_get_payment_history_validation_errors(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест валидации параметров истории платежей"""
+        service = PaymentService(db_session)
+        
+        # Создаем платеж
+        service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Test payment",
+            registered_by_id=test_admin.id
+        )
+        
+        # Тестируем ошибку при превышении лимита
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": 0,
+                "limit": 1001  # Превышает максимальный лимит
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 400
+        assert "Limit cannot exceed 1000" in response.json()["detail"]
+        
+        # Тестируем ошибку при отрицательном skip
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": -1,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 400
+        assert "Skip cannot be negative" in response.json()["detail"]
+        
+        # Тестируем ошибку при некорректном диапазоне сумм
+        response = client.post(
+            "/payments/history",
+            json={
+                "amount_min": 200.0,
+                "amount_max": 100.0,  # Мин больше макс
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 400
+        assert "Minimum amount cannot be greater than maximum amount" in response.json()["detail"]
+
+    def test_get_payment_history_access_control(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_trainer,
+        db_session
+    ):
+        """Тест контроля доступа к истории платежей"""
+        service = PaymentService(db_session)
+        
+        # Создаем платеж
+        service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Test payment",
+            registered_by_id=test_trainer.id
+        )
+        
+        # Тестируем доступ тренера (должен быть запрещен)
+        # Сначала нужно создать токен для тренера
+        from app.auth.jwt_handler import create_access_token
+        
+        trainer_token = create_access_token(
+            data={
+                "id": test_trainer.id,
+                "email": test_trainer.email,
+                "role": test_trainer.role.value
+            }
+        )
+        
+        trainer_headers = {"Authorization": f"Bearer {trainer_token}"}
+        
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": 0,
+                "limit": 10
+            },
+            headers=trainer_headers
+        )
+        
+        # Тренер не должен иметь доступ к истории платежей
+        assert response.status_code == 403
+        assert "Only admins can view payment history" in response.json()["detail"]
+
+    def test_get_payment_history_extended_data(
+        self,
+        client,
+        auth_headers,
+        test_client,
+        test_admin,
+        db_session
+    ):
+        """Тест получения расширенных данных в истории платежей"""
+        service = PaymentService(db_session)
+        
+        # Создаем платеж
+        payment = service.register_payment(
+            client_id=test_client.id,
+            amount=100.0,
+            description="Test payment with extended data",
+            registered_by_id=test_admin.id
+        )
+        
+        # Получаем историю
+        response = client.post(
+            "/payments/history",
+            json={
+                "skip": 0,
+                "limit": 10
+            },
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) > 0
+        
+        # Проверяем наличие расширенных данных
+        item = data["items"][0]
+        assert "client_first_name" in item
+        assert "client_last_name" in item
+        assert "created_by_first_name" in item
+        assert "created_by_last_name" in item
+        assert "payment_description" in item
+        
+        # Проверяем корректность данных
+        assert item["client_first_name"] == test_client.first_name
+        assert item["client_last_name"] == test_client.last_name
+        assert item["created_by_first_name"] == test_admin.first_name
+        assert item["created_by_last_name"] == test_admin.last_name 

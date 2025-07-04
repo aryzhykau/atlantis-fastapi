@@ -4,7 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.schemas.payment import PaymentCreate, PaymentResponse, ClientBalanceResponse
+from app.schemas.payment import (
+    PaymentCreate, 
+    PaymentResponse, 
+    ClientBalanceResponse,
+    PaymentHistoryFilterRequest,
+    PaymentHistoryListResponse
+)
 from app.services.payment import PaymentService
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
@@ -115,4 +121,32 @@ def get_filtered_payments(
         user_id=current_user["id"],
         registered_by_me=registered_by_me,
         period=period
+    )
+
+
+@router.post("/history", response_model=PaymentHistoryListResponse)
+def get_payment_history(
+    filters: PaymentHistoryFilterRequest,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение истории всех транзакций с фильтрами и пагинацией.
+    Только для админов.
+    
+    Args:
+        filters: Параметры фильтрации и пагинации
+    """
+    service = PaymentService(db)
+    result = service.get_payment_history_with_filters(
+        user_id=current_user["id"],
+        filters=filters
+    )
+    
+    return PaymentHistoryListResponse(
+        items=result["items"],
+        total=result["total"],
+        skip=result["skip"],
+        limit=result["limit"],
+        has_more=result["has_more"]
     ) 

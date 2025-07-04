@@ -12,14 +12,19 @@ def get_user_by_email(db: Session, email: str):
     return db.query(User).filter(User.email == email).first()
 
 
-# Удалить пользователя (роль неважна)
+# Получить всех пользователей для автокомплита
+def get_all_users(db: Session):
+    return db.query(User).order_by(User.first_name, User.last_name).all()
+
+
+# Удалить пользователя
 def delete_user(db: Session, user_id: int):
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return None
-    db.delete(user)
-    db.commit()
-    return user
+    if user:
+        db.delete(user)
+        db.commit()
+        return True
+    return False
 
 
 # Получить текущего пользователя

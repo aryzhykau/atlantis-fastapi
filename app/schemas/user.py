@@ -177,3 +177,13 @@ class StudentStatusResponse(BaseModel):
     client_status: bool = Field(..., description="Статус родительского клиента")
 
     model_config = {"from_attributes": True}
+
+class UserListResponse(BaseModel):
+    """Схема для списка пользователей в автокомплите"""
+    id: int
+    first_name: str
+    last_name: str
+    email: EmailStr
+    role: UserRole
+
+    model_config = {"from_attributes": True}

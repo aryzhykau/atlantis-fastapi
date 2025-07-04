@@ -1,12 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.schemas.user import UserMe, UserRole
-from app.crud.user import get_user_by_id, get_user_by_email, delete_user
+from app.schemas.user import UserMe, UserRole, UserListResponse
+from app.crud.user import get_user_by_id, get_user_by_email, delete_user, get_all_users
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+# Получение списка пользователей для автокомплита
+@router.get("/", response_model=List[UserListResponse])
+def get_users_list(current_user=Depends(verify_jwt_token), db: Session = Depends(get_db)):
+    """Получение списка пользователей для автокомплита (только админы)"""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return get_all_users(db)
 
 
 # Получение текущего пользователя
