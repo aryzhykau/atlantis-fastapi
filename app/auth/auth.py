@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth.jwt_handler import create_access_token, create_refresh_token, refresh_access_token
+from app.auth.jwt_handler import create_access_token, create_refresh_token, refresh_access_token, verify_jwt_token
 from app.dependencies import get_db
 from app.crud.user import get_user_by_email  # Searching for a user in the DB
 from app.utils.google import get_user_info_from_access_token  # Extract user info from Google
@@ -12,6 +12,9 @@ from app.utils.google import get_user_info_from_access_token  # Extract user inf
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+class LogoutResponse(BaseModel):
+    message: str
 
 logger = logging.getLogger(__name__)
 
@@ -61,3 +64,13 @@ async def refresh_token(refresh_token_request: RefreshTokenRequest):
     """
     new_access_token = refresh_access_token(refresh_token_request.refresh_token)
     return {"access_token": new_access_token, "refresh_token": refresh_token_request.refresh_token}
+
+
+@router.post("/logout", response_model=LogoutResponse)
+async def logout(current_user = Depends(verify_jwt_token)):
+    """
+    Logout endpoint that invalidates the current user's session.
+    In a production environment, you might want to implement a token blacklist.
+    """
+    logger.info(f"User {current_user['email']} logged out")
+    return {"message": "Successfully logged out"}
