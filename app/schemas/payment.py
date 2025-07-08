@@ -97,4 +97,15 @@ class PaymentHistoryListResponse(BaseModel):
     limit: int
     has_more: bool
 
+    model_config = {"from_attributes": True}
+
+
+class PaymentListResponse(BaseModel):
+    """Схема ответа со списком платежей и пагинацией"""
+    payments: List[PaymentResponse]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
+
     model_config = {"from_attributes": True} 

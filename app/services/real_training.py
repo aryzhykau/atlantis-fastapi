@@ -95,7 +95,7 @@ class RealTrainingService:
         # Получаем запись студента
         student_training = self.get_student_training(training_id, student_id)
         if not student_training:
-            raise HTTPException(status_code=404, detail="Student not found in training")
+            raise HTTPException(status_code=404, detail="Студент не найден в тренировке")
 
         # Проверяем время до начала
         is_safe_cancellation = self.check_cancellation_time(training, cancellation_data.notification_time)
@@ -279,7 +279,7 @@ class RealTrainingService:
         # Получаем запись студента
         student_training = self.get_student_training(db_training.id, student_id)
         if not student_training:
-            raise HTTPException(status_code=404, detail="Student not found in training")
+            raise HTTPException(status_code=404, detail="Студент не найден в тренировке")
         
         # Безопасная отмена (>12 часов) - НЕ списываем занятие
         if hours_before >= SAFE_CANCELLATION_HOURS:
@@ -318,11 +318,14 @@ class RealTrainingService:
             # Создаем штрафной инвойс если нет абонемента
             student = self.db.query(Student).filter(Student.id == student_id).first()
             if student:
+                # Получаем цену тренировки или устанавливаем значение по умолчанию
+                penalty_amount = training.training_type.price if training.training_type.price is not None else 100.0
+                
                 invoice = Invoice(
                     student_id=student_id,
                     client_id=student.client_id,
-                    amount=training.training_type.price,
-                    invoice_type=InvoiceType.LATE_CANCELLATION_FEE,
+                    amount=penalty_amount,
+                    type=InvoiceType.LATE_CANCELLATION_FEE,
                     description=f"Штраф: поздняя отмена {training.training_type.name} {training.training_date}"
                 )
                 self.db.add(invoice)

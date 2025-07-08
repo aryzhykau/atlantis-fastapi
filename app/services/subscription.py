@@ -111,8 +111,9 @@ class SubscriptionService:
         self.db.add(student_subscription)
         client = self.db.query(User).filter(User.id == student.client_id).first()
         invoice_status = InvoiceStatus.UNPAID
-        if client.balance >= subscription.price:
-            client.balance -= subscription.price
+        current_balance = client.balance or 0.0
+        if current_balance >= subscription.price:
+            client.balance = current_balance - subscription.price
             self.db.flush()
             self.db.refresh(client)
             invoice_status = InvoiceStatus.PAID
@@ -127,7 +128,6 @@ class SubscriptionService:
             amount=subscription.price,
             description=f"Subscription: {subscription.name}",
             status=invoice_status,
-            created_by_id=created_by_id,
             is_auto_renewal=False
         )
         self.db.add(invoice)
@@ -243,7 +243,7 @@ class SubscriptionService:
         invoice_service = InvoiceService(self.db)
         
         # Получаем все активные абонементы с автопродлением, которые заканчиваются сегодня
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         
         subscriptions_to_renew = (
@@ -264,8 +264,7 @@ class SubscriptionService:
         for subscription in subscriptions_to_renew:
             # Создаем инвойс для автопродления
             auto_renewal_invoice = invoice_service.create_auto_renewal_invoice(
-                student_subscription=subscription,
-                created_by_id=admin_id
+                student_subscription=subscription
             )
             
             # Создаем новый абонемент, который начнется сразу после окончания текущего
@@ -289,4 +288,42 @@ class SubscriptionService:
         for subscription in renewed_subscriptions:
             self.db.refresh(subscription)
 
-        return renewed_subscriptions 
+        return renewed_subscriptions
+
+    def auto_unfreeze_expired_subscriptions(self, admin_id: int) -> List[StudentSubscription]:
+        """
+        Автоматически размораживает абонементы, у которых период заморозки уже закончился.
+        Вызывается по расписанию или вручную администратором.
+        """
+        current_time = datetime.now(timezone.utc)
+        
+        # Находим все абонементы с истёкшей заморозкой
+        expired_frozen_subscriptions = (
+            self.db.query(StudentSubscription)
+            .filter(
+                and_(
+                    StudentSubscription.freeze_end_date.isnot(None),
+                    StudentSubscription.freeze_end_date < current_time
+                )
+            )
+            .all()
+        )
+        
+        unfrozen_subscriptions = []
+        for subscription in expired_frozen_subscriptions:
+            logger.info(f"Auto-unfreezing subscription {subscription.id} for student {subscription.student_id}")
+            
+            # Сбрасываем поля заморозки
+            subscription.freeze_start_date = None
+            subscription.freeze_end_date = None
+            
+            unfrozen_subscriptions.append(subscription)
+        
+        if unfrozen_subscriptions:
+            self.db.commit()
+            for subscription in unfrozen_subscriptions:
+                self.db.refresh(subscription)
+            
+            logger.info(f"Auto-unfroze {len(unfrozen_subscriptions)} subscriptions")
+        
+        return unfrozen_subscriptions 

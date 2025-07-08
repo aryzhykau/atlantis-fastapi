@@ -14,10 +14,12 @@ from app.models import (
     RealTraining,
     RealTrainingStudent,
     StudentSubscription,
+    Subscription,
     Invoice,
     InvoiceType
 )
 from app.models.user import UserRole
+from app.schemas.attendance import AttendanceStatus
 from app.crud.real_training import generate_next_week_trainings
 
 
@@ -27,6 +29,7 @@ def training_type(db_session: Session):
     training_type = TrainingType(
         name="Test Training",
         color="#FF0000",
+        price=100.0,
         is_subscription_only=False,
         is_active=True
     )
@@ -130,23 +133,37 @@ def template_with_student(db_session: Session, training_template, student):
 
 
 @pytest.fixture
-def student_subscription(db_session: Session, student):
+def student_subscription(db_session: Session, student, training_type):
     """Создает активный абонемент для студента"""
-    subscription = StudentSubscription(
-        student_id=student.id,
-        start_date=date.today() - timedelta(days=30),  # Начался месяц назад
-        end_date=date.today() + timedelta(days=30),    # Заканчивается через месяц
-        sessions_left=10,  # 10 занятий осталось
-        is_active=True,
-        is_auto_renew=False
+    # Создаем подписку
+    subscription = Subscription(
+        name="Test Subscription",
+        price=100.0,
+        number_of_sessions=10,
+        validity_days=60,
+        is_active=True
     )
     db_session.add(subscription)
     db_session.commit()
     db_session.refresh(subscription)
-    yield subscription
+    
+    # Создаем студентскую подписку
+    student_subscription = StudentSubscription(
+        student_id=student.id,
+        subscription_id=subscription.id,
+        start_date=date.today() - timedelta(days=30),  # Начался месяц назад
+        end_date=date.today() + timedelta(days=30),    # Заканчивается через месяц
+        sessions_left=10,  # 10 занятий осталось
+        is_auto_renew=False
+    )
+    db_session.add(student_subscription)
+    db_session.commit()
+    db_session.refresh(student_subscription)
+    yield student_subscription
     # Удаляем абонемент после всех зависимых объектов
     db_session.execute(text("DELETE FROM real_training_students"))
-    db_session.execute(text("DELETE FROM student_subscriptions WHERE id = :id"), {"id": subscription.id})
+    db_session.execute(text("DELETE FROM student_subscriptions WHERE id = :id"), {"id": student_subscription.id})
+    db_session.execute(text("DELETE FROM subscriptions WHERE id = :id"), {"id": subscription.id})
     db_session.commit()
 
 
@@ -181,8 +198,10 @@ def test_generate_next_week_trainings(db_session: Session, training_template, te
 
 
 def test_generate_next_week_endpoint_as_admin(client, auth_headers, training_template, template_with_student):
-    """Тест эндпойнта генерации тренировок от имени админа"""
-    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    """Тест эндпойнта генерации тренировок с API ключом"""
+    # Эндпоинт использует API ключ для cron-задач, а не JWT токены
+    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert data["created_count"] > 0
@@ -270,7 +289,8 @@ def test_generate_next_week_with_frozen_student(db_session: Session, training_te
 def test_cancel_training_as_admin(client, auth_headers, training_template, template_with_student):
     """Тест отмены тренировки администратором"""
     # Создаем тренировку через генерацию
-    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     training_id = response.json()["trainings"][0]["id"]
     
@@ -300,7 +320,8 @@ def test_cancel_training_as_admin(client, auth_headers, training_template, templ
 def test_cancel_training_as_non_admin(client, auth_headers, training_template, template_with_student, trainer, trainer_auth_headers):
     """Тест что не-администратор не может отменить тренировку"""
     # Создаем тренировку через генерацию
-    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     training_id = response.json()["trainings"][0]["id"]
     
@@ -320,7 +341,8 @@ def test_cancel_training_as_non_admin(client, auth_headers, training_template, t
 def test_cancel_already_cancelled_training(client, auth_headers, training_template, template_with_student):
     """Тест что нельзя отменить уже отмененную тренировку"""
     # Создаем тренировку через генерацию
-    response = client.post("/real-trainings/generate-next-week", headers=auth_headers)
+    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     training_id = response.json()["trainings"][0]["id"]
     
@@ -388,11 +410,13 @@ def test_cancel_student_safe_cancellation(client, auth_headers, training_templat
     
     assert response.status_code == status.HTTP_204_NO_CONTENT
     
-    # Проверяем, что студент удален из тренировки
+    # Проверяем, что студент остается в тренировке с статусом безопасной отмены
     remaining_students = db_session.query(RealTrainingStudent).filter(
         RealTrainingStudent.real_training_id == training.id
     ).all()
-    assert len(remaining_students) == 0
+    assert len(remaining_students) == 1
+    assert remaining_students[0].status == AttendanceStatus.CANCELLED_SAFE
+    assert remaining_students[0].cancelled_at is not None
     
     # Проверяем, что занятие НЕ списалось с абонемента (безопасная отмена)
     db_session.refresh(student_subscription)
@@ -441,11 +465,13 @@ def test_cancel_student_unsafe_cancellation(client, auth_headers, training_templ
     
     assert response.status_code == status.HTTP_204_NO_CONTENT
     
-    # Проверяем, что студент удален из тренировки
+    # Проверяем, что студент остается в тренировке с статусом отмены
     remaining_students = db_session.query(RealTrainingStudent).filter(
         RealTrainingStudent.real_training_id == training.id
     ).all()
-    assert len(remaining_students) == 0
+    assert len(remaining_students) == 1
+    assert remaining_students[0].status == AttendanceStatus.CANCELLED_PENALTY
+    assert remaining_students[0].cancelled_at is not None
     
     # Проверяем, что занятие списалось с абонемента как штраф (небезопасная отмена)
     db_session.refresh(student_subscription)
@@ -491,16 +517,18 @@ def test_cancel_student_unsafe_cancellation_no_subscription(client, auth_headers
     
     assert response.status_code == status.HTTP_204_NO_CONTENT
     
-    # Проверяем, что студент удален из тренировки
+    # Проверяем, что студент остается в тренировке с статусом отмены
     remaining_students = db_session.query(RealTrainingStudent).filter(
         RealTrainingStudent.real_training_id == training.id
     ).all()
-    assert len(remaining_students) == 0
+    assert len(remaining_students) == 1
+    assert remaining_students[0].status == AttendanceStatus.CANCELLED_PENALTY
+    assert remaining_students[0].cancelled_at is not None
     
     # Проверяем, что создался штрафной инвойс
     penalty_invoices = db_session.query(Invoice).filter(
         Invoice.student_id == template_with_student.student_id,
-        Invoice.invoice_type == InvoiceType.LATE_CANCELLATION_FEE
+        Invoice.type == InvoiceType.LATE_CANCELLATION_FEE
     ).all()
     assert len(penalty_invoices) == 1
     assert penalty_invoices[0].amount == training.training_type.price
@@ -514,7 +542,7 @@ def test_cancel_student_multiple_cancellations(client, auth_headers, training_te
     
     for i in range(5):
         training = RealTraining(
-            training_date=today + timedelta(days=i),
+            training_date=today,  # Все тренировки на сегодня - небезопасная отмена
             start_time=time(20, 0),
             responsible_trainer_id=training_template.responsible_trainer_id,
             training_type_id=training_template.training_type_id,
@@ -548,12 +576,14 @@ def test_cancel_student_multiple_cancellations(client, auth_headers, training_te
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
     
-    # Проверяем, что все студенты удалены из тренировок
+    # Проверяем, что все студенты отмечены как отмененные
     for training in trainings:
         remaining_students = db_session.query(RealTrainingStudent).filter(
             RealTrainingStudent.real_training_id == training.id
         ).all()
-        assert len(remaining_students) == 0
+        assert len(remaining_students) == 1
+        assert remaining_students[0].status == AttendanceStatus.CANCELLED_PENALTY
+        assert remaining_students[0].cancelled_at is not None
 
 
 def test_cancel_student_not_found(client, auth_headers, training_template, db_session):
@@ -585,7 +615,7 @@ def test_cancel_student_not_found(client, auth_headers, training_template, db_se
     )
     
     assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert "not found" in response.json()["detail"].lower()
+    assert "студент не найден" in response.json()["detail"].lower()
 
 
 def test_cancel_student_training_not_found(client, auth_headers, template_with_student):
@@ -602,7 +632,7 @@ def test_cancel_student_training_not_found(client, auth_headers, template_with_s
     )
     
     assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert "not found" in response.json()["detail"].lower()
+    assert "не найдена" in response.json()["detail"].lower()
 
 
 def test_cancel_student_unauthorized(client, training_template, template_with_student, db_session):

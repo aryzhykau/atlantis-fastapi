@@ -51,7 +51,7 @@ class StudentUser(BaseModel):
     last_name: str
     phone: str
     email: str
-    balance: float
+    balance: float | None = None
 
     model_config = {"from_attributes": True}
 

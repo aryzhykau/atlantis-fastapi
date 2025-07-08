@@ -193,3 +193,92 @@ def get_payment_history_filtered(
         }
         history_items.append(item)
     return history_items, total_count
+
+
+def get_trainer_payments_filtered(
+    db: Session,
+    trainer_id: int,
+    period: str = "all",
+    client_id: Optional[int] = None,
+    amount_min: Optional[float] = None,
+    amount_max: Optional[float] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    description_search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50
+) -> Tuple[List[Payment], int]:
+    """
+    Получение платежей тренера с фильтрами и пагинацией
+    
+    Args:
+        db: Сессия базы данных
+        trainer_id: ID тренера
+        period: Период фильтрации (week/month/3months/all)
+        client_id: ID клиента для фильтрации
+        amount_min: Минимальная сумма
+        amount_max: Максимальная сумма
+        date_from: Дата начала периода (YYYY-MM-DD)
+        date_to: Дата окончания периода (YYYY-MM-DD)
+        description_search: Поиск по описанию
+        skip: Смещение для пагинации
+        limit: Лимит записей
+        
+    Returns:
+        Кортеж (список платежей, общее количество)
+    """
+    query = db.query(Payment).filter(Payment.registered_by_id == trainer_id)
+    
+    # Фильтр по периоду
+    if period != "all":
+        now = datetime.utcnow()
+        if period == "week":
+            start_date = now - timedelta(days=7)
+        elif period == "month":
+            start_date = now - timedelta(days=30)
+        elif period == "3months":
+            start_date = now - timedelta(days=90)
+        else:
+            start_date = now - timedelta(days=7)  # По умолчанию неделя
+        
+        query = query.filter(Payment.payment_date >= start_date)
+    
+    # Фильтр по клиенту
+    if client_id:
+        query = query.filter(Payment.client_id == client_id)
+    
+    # Фильтр по сумме
+    if amount_min is not None:
+        query = query.filter(Payment.amount >= amount_min)
+    if amount_max is not None:
+        query = query.filter(Payment.amount <= amount_max)
+    
+    # Фильтр по датам
+    if date_from:
+        query = query.filter(Payment.payment_date >= date_from)
+    if date_to:
+        query = query.filter(Payment.payment_date <= date_to)
+    
+    # Фильтр по описанию
+    if description_search:
+        search_term = f"%{description_search}%"
+        query = query.filter(Payment.description.ilike(search_term))
+    
+    # Исключаем отменённые платежи
+    query = query.filter(Payment.cancelled_at.is_(None))
+    
+    # Получаем общее количество
+    total_count = query.count()
+    
+    # Сортировка и пагинация
+    query = query.order_by(desc(Payment.payment_date))
+    query = query.offset(skip).limit(limit)
+    
+    # Жадная загрузка связанных объектов
+    query = query.options(
+        selectinload(Payment.client),
+        selectinload(Payment.registered_by)
+    )
+    
+    payments = query.all()
+    return payments, total_count

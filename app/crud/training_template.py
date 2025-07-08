@@ -7,6 +7,7 @@ from app.schemas.training_template import (
     TrainingStudentTemplateCreate,
     TrainingStudentTemplateUpdate,
 )
+from datetime import date
 
 
 
@@ -94,16 +95,12 @@ def delete_training_template(db: Session, template_id: int):
     db_template = get_training_template_by_id(db, template_id)
     if not db_template:
         return None
-    
-    # Сначала удаляем все связанные TrainingStudentTemplate записи
     db.query(TrainingStudentTemplate).filter(
         TrainingStudentTemplate.training_template_id == template_id
     ).delete()
-    
-    # Теперь можем безопасно удалить сам шаблон
     db.delete(db_template)
     db.commit()
-    return True
+    return db_template
 
 
 
@@ -127,18 +124,12 @@ def create_training_student_template(db: Session, student_template_data: Trainin
         .filter(TrainingTemplate.id == student_template_data.training_template_id)
         .first()
     )
-
     if not training_template:
         raise HTTPException(status_code=404, detail=f"Training template with id {student_template_data.training_template_id} not found")
-
-    # 2. Получаем максимальное количество участников из типа тренировки
     training_type = training_template.training_type
     if not training_type:
         raise HTTPException(status_code=500, detail=f"Training type not found for template id {training_template.id}")
-    
     max_participants = training_type.max_participants
-
-    # 3. Считаем текущее количество активных студентов в этом шаблоне
     current_student_count = (
         db.query(TrainingStudentTemplate)
         .filter(
@@ -147,15 +138,14 @@ def create_training_student_template(db: Session, student_template_data: Trainin
         )
         .count()
     )
-
-    # 4. Проверяем, не будет ли превышен лимит
     if current_student_count >= max_participants:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot add student. Maximum number of participants ({max_participants}) for this training type in this template has been reached."
         )
-
-    # Если все проверки пройдены, создаем запись
+    # Валидация: дата не может быть в прошлом
+    if student_template_data.start_date < date.today():
+        raise ValueError("Дата начала не может быть в прошлом")
     db_student_template = TrainingStudentTemplate(
         training_template_id=student_template_data.training_template_id,
         student_id=student_template_data.student_id,

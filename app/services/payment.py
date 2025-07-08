@@ -502,4 +502,89 @@ class PaymentService:
             "skip": filters.skip,
             "limit": filters.limit,
             "has_more": has_more
+        }
+
+    def get_trainer_registered_payments(
+        self,
+        trainer_id: int,
+        period: str = "all",
+        client_id: Optional[int] = None,
+        amount_min: Optional[float] = None,
+        amount_max: Optional[float] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        description_search: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> dict:
+        """
+        Получение платежей, зарегистрированных тренером
+        
+        Args:
+            trainer_id: ID тренера
+            period: Период фильтрации (week/month/3months/all)
+            client_id: ID клиента для фильтрации
+            amount_min: Минимальная сумма
+            amount_max: Максимальная сумма
+            date_from: Дата начала периода
+            date_to: Дата окончания периода
+            description_search: Поиск по описанию
+            skip: Смещение для пагинации
+            limit: Лимит записей
+            
+        Returns:
+            Словарь с данными платежей и пагинацией
+        """
+        # Валидация параметров
+        if limit > 1000:
+            raise HTTPException(
+                status_code=400,
+                detail="Limit cannot exceed 1000"
+            )
+        
+        if skip < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Skip cannot be negative"
+            )
+        
+        if amount_min is not None and amount_max is not None:
+            if amount_min > amount_max:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Minimum amount cannot be greater than maximum amount"
+                )
+        
+        if date_from and date_to:
+            if date_from > date_to:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Start date cannot be later than end date"
+                )
+
+        # Получаем данные через CRUD
+        from app.crud import payment as crud
+        payments, total_count = crud.get_trainer_payments_filtered(
+            self.db,
+            trainer_id=trainer_id,
+            period=period,
+            client_id=client_id,
+            amount_min=amount_min,
+            amount_max=amount_max,
+            date_from=date_from,
+            date_to=date_to,
+            description_search=description_search,
+            skip=skip,
+            limit=limit
+        )
+
+        # Формируем ответ
+        has_more = (skip + limit) < total_count
+        
+        return {
+            "payments": payments,
+            "total": total_count,
+            "skip": skip,
+            "limit": limit,
+            "has_more": has_more
         } 

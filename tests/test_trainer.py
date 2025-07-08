@@ -196,7 +196,7 @@ def test_update_trainer_status_not_found(client, auth_headers):
         headers=auth_headers
     )
     assert response.status_code == 404
-    assert "не найден" in response.json()["detail"]
+    assert "Тренер не найден" in response.json()["detail"]
 
 
 def test_update_trainer_status_unauthorized(client):

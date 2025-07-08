@@ -1,26 +1,88 @@
 from sqlalchemy.orm import Session
 from app.models.student import Student
 from app.models.user import User
+from app.models.subscription import StudentSubscription
 from app.schemas.student import StudentCreate, StudentUpdate
 from datetime import datetime
+from sqlalchemy import and_
 
 
 # Получить студента по ID
 def get_student_by_id(db: Session, student_id: int) -> Student | None:
     """Получает студента по его ID."""
-    return db.query(Student).filter(Student.id == student_id).first()
+    student = db.query(Student).filter(Student.id == student_id).first()
+    
+    if student:
+        _update_active_subscription_id(student, db)
+        db.commit()
+    
+    return student
+
+
+def _update_active_subscription_id(student: Student, db: Session) -> None:
+    """
+    Обновляет active_subscription_id студента, проверяя статус абонемента.
+    Если текущий абонемент истёк или заморожен, ищет активный абонемент.
+    """
+    if not student.active_subscription_id:
+        return
+    
+    # Проверяем статус текущего активного абонемента
+    current_subscription = (
+        db.query(StudentSubscription)
+        .filter(
+            and_(
+                StudentSubscription.student_id == student.id,
+                StudentSubscription.subscription_id == student.active_subscription_id
+            )
+        )
+        .first()
+    )
+    
+    if not current_subscription or current_subscription.status in ["expired", "frozen"]:
+        # Ищем активный абонемент
+        active_subscription = (
+            db.query(StudentSubscription)
+            .filter(
+                and_(
+                    StudentSubscription.student_id == student.id,
+                    StudentSubscription.status == "active"
+                )
+            )
+            .order_by(StudentSubscription.end_date.desc())
+            .first()
+        )
+        
+        if active_subscription:
+            student.active_subscription_id = active_subscription.subscription_id
+        else:
+            student.active_subscription_id = None
 
 
 # Получить всех студентов
 def get_students(db: Session) -> list[Student]:
     """Получает полный список студентов."""
-    return db.query(Student).all()
+    students = db.query(Student).all()
+    
+    # Обновляем active_subscription_id для каждого студента
+    for student in students:
+        _update_active_subscription_id(student, db)
+    
+    db.commit()
+    return students
 
 
 # Получить студентов по ID клиента
 def get_students_by_client_id(db: Session, client_id: int) -> list[Student]:
     """Получает список всех студентов, связанных с указанным клиентом."""
-    return db.query(Student).filter(Student.client_id == client_id).order_by(Student.first_name, Student.last_name).all()
+    students = db.query(Student).filter(Student.client_id == client_id).order_by(Student.first_name, Student.last_name).all()
+    
+    # Обновляем active_subscription_id для каждого студента
+    for student in students:
+        _update_active_subscription_id(student, db)
+    
+    db.commit()
+    return students
 
 
 # Создать нового студента

@@ -2,6 +2,7 @@ import pytest
 from datetime import time, date, timedelta
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
+from fastapi import HTTPException
 
 from app.models import TrainingTemplate, TrainingStudentTemplate, User, TrainingType, Student
 from app.models.user import UserRole
@@ -119,8 +120,6 @@ class TestTrainingTemplate:
         Тест: Нельзя создать два шаблона для одного тренера в одно время в один день недели.
         Один тренер не может быть в двух местах одновременно!
         """
-        from fastapi import HTTPException
-        
         # Создаем первый шаблон
         template_data_1 = TrainingTemplateCreate(
             day_number=1,  # Понедельник
@@ -239,12 +238,13 @@ class TestTrainingStudentTemplate:
         test_student: Student
     ):
         yesterday = date.today() - timedelta(days=1)
+        student_template_data = TrainingStudentTemplateCreate(
+            training_template_id=test_template.id,
+            student_id=test_student.id,
+            start_date=yesterday
+        )
         with pytest.raises(ValueError, match="Дата начала не может быть в прошлом"):
-            TrainingStudentTemplateCreate(
-                training_template_id=test_template.id,
-                student_id=test_student.id,
-                start_date=yesterday
-            )
+            create_training_student_template(db_session, student_template_data)
 
     def test_freeze_student_template(self, db_session: Session, test_student_template: TrainingStudentTemplate):
         tomorrow = date.today() + timedelta(days=1)

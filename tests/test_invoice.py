@@ -46,7 +46,6 @@ class TestInvoiceService:
             subscription_id=test_subscription.id,
             amount=test_subscription.price,
             description="Test subscription invoice",
-            created_by_id=test_admin.id,
             is_auto_renewal=False
         )
 
@@ -83,8 +82,7 @@ class TestInvoiceService:
             student_id=test_student.id,
             training_id=training.id,
             amount=50.0,
-            description="Test training invoice",
-            created_by_id=test_admin.id
+            description="Test training invoice"
         )
 
         assert invoice.client_id == test_client.id
@@ -108,8 +106,7 @@ class TestInvoiceService:
             student_id=test_student.id,
             subscription_id=test_subscription.id,
             amount=test_subscription.price,
-            description="Test subscription invoice",
-            created_by_id=test_admin.id
+            description="Test subscription invoice"
         )
 
         cancelled_invoice = service.cancel_invoice(
@@ -137,8 +134,7 @@ class TestInvoiceService:
             student_id=test_student.id,
             subscription_id=test_subscription.id,
             amount=50.0,
-            description="Test invoice 1",
-            created_by_id=test_admin.id
+            description="Test invoice 1"
         )
 
         invoice2 = service.create_subscription_invoice(
@@ -146,8 +142,7 @@ class TestInvoiceService:
             student_id=test_student.id,
             subscription_id=test_subscription.id,
             amount=30.0,
-            description="Test invoice 2",
-            created_by_id=test_admin.id
+            description="Test invoice 2"
         )
 
         # Обрабатываем платеж на сумму, достаточную для погашения обоих инвойсов
@@ -176,8 +171,7 @@ class TestInvoiceService:
             student_id=test_student.id,
             subscription_id=test_subscription.id,
             amount=test_payment.amount,
-            description="Test invoice",
-            created_by_id=test_admin.id
+            description="Test invoice"
         )
 
         # Оплачиваем инвойс
@@ -218,8 +212,7 @@ class TestInvoiceService:
 
         # Создаем инвойс для автопродления
         auto_renewal_invoice = service.create_auto_renewal_invoice(
-            student_subscription=student_subscription,
-            created_by_id=test_admin.id
+            student_subscription=student_subscription
         )
 
         assert auto_renewal_invoice.student_id == test_student.id
@@ -243,16 +236,14 @@ class TestInvoiceService:
             client_id=test_client.id,
             subscription_id=test_subscription.id,
             amount=50.0,
-            description="Test invoice 1",
-            created_by_id=test_admin.id
+            description="Test invoice 1"
         )
         
         invoice2 = service.create_subscription_invoice(
             client_id=test_client.id,
             subscription_id=test_subscription.id,
             amount=30.0,
-            description="Test invoice 2",
-            created_by_id=test_admin.id
+            description="Test invoice 2"
         )
         
         # Устанавливаем баланс клиента
@@ -295,16 +286,14 @@ class TestInvoiceService:
             client_id=test_client.id,
             subscription_id=test_subscription.id,
             amount=50.0,
-            description="Test invoice 1",
-            created_by_id=test_admin.id
+            description="Test invoice 1"
         )
         
         invoice2 = service.create_subscription_invoice(
             client_id=test_client.id,
             subscription_id=test_subscription.id,
             amount=30.0,
-            description="Test invoice 2",
-            created_by_id=test_admin.id
+            description="Test invoice 2"
         )
         
         # Устанавливаем баланс клиента
@@ -336,8 +325,7 @@ class TestInvoiceService:
                 client_id=test_client.id,
                 subscription_id=test_subscription.id,
                 amount=100.0,
-                description=f"Test invoice {i+1}",
-                created_by_id=test_admin.id
+                description=f"Test invoice {i+1}"
             )
             
         # Получаем список инвойсов
@@ -374,8 +362,7 @@ class TestInvoiceEndpoints:
                 student_id=test_student.id,
                 subscription_id=test_subscription.id,
                 amount=100.0,
-                description=f"Test invoice {i+1}",
-                created_by_id=test_admin.id
+                description=f"Test invoice {i+1}"
             )
 
         response = client.get(
@@ -403,8 +390,7 @@ class TestInvoiceEndpoints:
                 client_id=test_client.id,
                 subscription_id=test_subscription.id,
                 amount=100.0,
-                description=f"Test invoice {i+1}",
-                created_by_id=test_admin.id
+                description=f"Test invoice {i+1}"
             )
 
         response = client.get(

@@ -23,6 +23,8 @@ from app.crud.subscription import (
 )
 from app.schemas.user import UserRole
 from app.services.subscription import SubscriptionService
+from app.core.security import verify_api_key
+
 
 logger = logging.getLogger(__name__)
 
@@ -177,3 +179,30 @@ def unfreeze_subscription(
         student_subscription_id=subscription_id,
         updated_by_id=current_user["id"]
     )
+
+
+@router.post("/auto-unfreeze", response_model=List[StudentSubscriptionResponse], dependencies=[Depends(verify_api_key)])
+def auto_unfreeze_expired_subscriptions(
+    db: Session = Depends(get_db)
+):
+    """
+    Автоматическая разморозка всех абонементов с истёкшей заморозкой.
+    Защищен API ключом (передается в заголовке X-API-Key).
+    Может вызываться внешним сервисом по расписанию (например, cron).
+    """
+    # Получаем системного администратора
+    from app.models.user import User, UserRole
+    admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
+    if not admin:
+        raise HTTPException(
+            status_code=500,
+            detail="No admin user found in the system"
+        )
+    
+    service = SubscriptionService(db)
+    return service.auto_unfreeze_expired_subscriptions(
+        admin_id=admin.id
+    )
+
+
+

@@ -97,7 +97,6 @@ def create_subscription_invoice(
         subscription_id=invoice_data.subscription_id,
         amount=invoice_data.amount,
         description=invoice_data.description,
-        created_by_id=current_user["id"],
         is_auto_renewal=invoice_data.is_auto_renewal
     )
 
@@ -118,8 +117,7 @@ def create_training_invoice(
         student_id=invoice_data.student_id,
         training_id=invoice_data.training_id,
         amount=invoice_data.amount,
-        description=invoice_data.description,
-        created_by_id=current_user["id"]
+        description=invoice_data.description
     )
 
 

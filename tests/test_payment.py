@@ -272,7 +272,7 @@ class TestPaymentService:
                 description=f"Test invoice {i+1}",
                 status=InvoiceStatus.UNPAID,
                 type=InvoiceType.SUBSCRIPTION,
-                created_by_id=test_admin.id,
+
                 is_auto_renewal=False,
                 created_at=datetime.utcnow() - timedelta(days=i)  # Разные даты создания
             )
@@ -466,7 +466,7 @@ class TestPaymentService:
             type=InvoiceType.SUBSCRIPTION,
             status=InvoiceStatus.UNPAID,
             description="Test invoice",
-            created_by_id=test_admin.id,
+
             created_at=datetime.utcnow()
         )
         db_session.add(invoice)
@@ -577,7 +577,6 @@ class TestPaymentService:
             description="Test invoice",
             status=InvoiceStatus.UNPAID,
             type=InvoiceType.SUBSCRIPTION,
-            created_by_id=test_admin.id,
             is_auto_renewal=False
         )
         db_session.add(invoice)
@@ -678,7 +677,6 @@ class TestPaymentService:
             description="Test invoice 1",
             status=InvoiceStatus.UNPAID,
             type=InvoiceType.SUBSCRIPTION,
-            created_by_id=test_admin.id,
             is_auto_renewal=False
         )
         
@@ -688,7 +686,6 @@ class TestPaymentService:
             description="Test invoice 2",
             status=InvoiceStatus.UNPAID,
             type=InvoiceType.SUBSCRIPTION,
-            created_by_id=test_admin.id,
             is_auto_renewal=False
         )
         
@@ -1077,12 +1074,8 @@ class TestPaymentEndpoints:
         )
         
         # Тестируем базовый запрос без фильтров
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?skip=0&limit=10",
             headers=auth_headers
         )
         
@@ -1123,13 +1116,8 @@ class TestPaymentEndpoints:
         )
         
         # Тестируем фильтр по минимальной сумме
-        response = client.post(
-            "/payments/history",
-            json={
-                "amount_min": 100.0,
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?amount_min=100.0&skip=0&limit=10",
             headers=auth_headers
         )
         
@@ -1168,13 +1156,8 @@ class TestPaymentEndpoints:
         )
         
         # Тестируем фильтр по типу операции PAYMENT
-        response = client.post(
-            "/payments/history",
-            json={
-                "operation_type": "PAYMENT",
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?operation_type=PAYMENT&skip=0&limit=10",
             headers=auth_headers
         )
         
@@ -1187,13 +1170,8 @@ class TestPaymentEndpoints:
             assert item["operation_type"] == "PAYMENT"
         
         # Тестируем фильтр по типу операции CANCELLATION
-        response = client.post(
-            "/payments/history",
-            json={
-                "operation_type": "CANCELLATION",
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?operation_type=CANCELLATION&skip=0&limit=10",
             headers=auth_headers
         )
         
@@ -1225,13 +1203,8 @@ class TestPaymentEndpoints:
         )
         
         # Тестируем фильтр по клиенту
-        response = client.post(
-            "/payments/history",
-            json={
-                "client_id": test_client.id,
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            f"/payments/history?client_id={test_client.id}&skip=0&limit=10",
             headers=auth_headers
         )
         
@@ -1264,12 +1237,8 @@ class TestPaymentEndpoints:
             )
         
         # Тестируем первую страницу
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": 0,
-                "limit": 2
-            },
+        response = client.get(
+            "/payments/history?skip=0&limit=2",
             headers=auth_headers
         )
         
@@ -1281,12 +1250,8 @@ class TestPaymentEndpoints:
         assert data["has_more"] == True
         
         # Тестируем вторую страницу
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": 2,
-                "limit": 2
-            },
+        response = client.get(
+            "/payments/history?skip=2&limit=2",
             headers=auth_headers
         )
         
@@ -1316,12 +1281,8 @@ class TestPaymentEndpoints:
         )
         
         # Тестируем ошибку при превышении лимита
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": 0,
-                "limit": 1001  # Превышает максимальный лимит
-            },
+        response = client.get(
+            "/payments/history?skip=0&limit=1001",  # Превышает максимальный лимит
             headers=auth_headers
         )
         
@@ -1329,12 +1290,8 @@ class TestPaymentEndpoints:
         assert "Limit cannot exceed 1000" in response.json()["detail"]
         
         # Тестируем ошибку при отрицательном skip
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": -1,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?skip=-1&limit=10",
             headers=auth_headers
         )
         
@@ -1342,14 +1299,8 @@ class TestPaymentEndpoints:
         assert "Skip cannot be negative" in response.json()["detail"]
         
         # Тестируем ошибку при некорректном диапазоне сумм
-        response = client.post(
-            "/payments/history",
-            json={
-                "amount_min": 200.0,
-                "amount_max": 100.0,  # Мин больше макс
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?amount_min=200.0&amount_max=100.0&skip=0&limit=10",  # Мин больше макс
             headers=auth_headers
         )
         
@@ -1389,12 +1340,8 @@ class TestPaymentEndpoints:
         
         trainer_headers = {"Authorization": f"Bearer {trainer_token}"}
         
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?skip=0&limit=10",
             headers=trainer_headers
         )
         
@@ -1422,12 +1369,8 @@ class TestPaymentEndpoints:
         )
         
         # Получаем историю
-        response = client.post(
-            "/payments/history",
-            json={
-                "skip": 0,
-                "limit": 10
-            },
+        response = client.get(
+            "/payments/history?skip=0&limit=10",
             headers=auth_headers
         )
         

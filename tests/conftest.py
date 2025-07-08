@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,11 +28,20 @@ from app.auth.jwt_handler import create_access_token
 # URL для тестовой базы данных (SQLite в оперативной памяти)
 DATABASE_URL = "sqlite:///./test_database.db"
 
+# Глобальная переменная для отслеживания первого теста
+_first_test = True
+
 @pytest.fixture(scope="function")
 def db_session():
     """
     Фикстура для работы с одной общей сессией базы данных внутри каждого теста.
     """
+    global _first_test
+    
+    # Удаляем файл базы данных только перед первым тестом
+    if _first_test and os.path.exists("test_database.db"):
+        os.remove("test_database.db")
+        _first_test = False
 
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -217,7 +227,6 @@ def test_invoice(db_session: Session, test_client: User, test_subscription: Subs
         description="Test invoice for payment",
         status=InvoiceStatus.UNPAID,
         type=InvoiceType.SUBSCRIPTION,
-        created_by_id=test_client.id,
         is_auto_renewal=False
     )
     db_session.add(invoice)

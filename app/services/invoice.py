@@ -56,7 +56,6 @@ class InvoiceService:
         subscription_id: int,
         amount: float,
         description: str,
-        created_by_id: int,
         student_id: Optional[int] = None,
         is_auto_renewal: bool = False
     ) -> Invoice:
@@ -94,7 +93,6 @@ class InvoiceService:
             amount=amount,
             description=description,
             status=invoice_status,
-            created_by_id=created_by_id,
             is_auto_renewal=is_auto_renewal
         )
         self.db.add(invoice)
@@ -109,7 +107,6 @@ class InvoiceService:
         training_id: int,
         amount: float,
         description: str,
-        created_by_id: int,
         student_id: Optional[int] = None
     ) -> Invoice:
         """
@@ -153,7 +150,6 @@ class InvoiceService:
             amount=amount,
             description=description,
             status=InvoiceStatus.UNPAID,
-            created_by_id=created_by_id,
             is_auto_renewal=False
         )
         self.db.add(invoice)
@@ -263,8 +259,7 @@ class InvoiceService:
 
     def create_auto_renewal_invoice(
         self,
-        student_subscription: StudentSubscription,
-        created_by_id: int
+        student_subscription: StudentSubscription
     ) -> Invoice:
         """Создание инвойса для автопродления"""
         # Получаем информацию об абонементе
@@ -276,7 +271,6 @@ class InvoiceService:
             subscription_id=subscription.id,
             amount=subscription.price,
             description=f"Auto-renewal: {subscription.name}",
-            created_by_id=created_by_id,
             student_id=student_subscription.student_id,
             is_auto_renewal=True
         )

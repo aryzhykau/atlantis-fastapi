@@ -429,5 +429,5 @@ def test_deactivate_student_full_scenario(client, auth_headers, create_test_clie
         headers=auth_headers
     )
     assert error_response.status_code == 400
-    assert "inactive" in error_response.json()["detail"].lower()
+    assert "не найден" in error_response.json()["detail"].lower()
 

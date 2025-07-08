@@ -39,7 +39,6 @@ class InvoiceResponse(BaseModel):
     created_at: datetime
     paid_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
-    created_by_id: int
     cancelled_by_id: Optional[int] = None
     is_auto_renewal: bool
 

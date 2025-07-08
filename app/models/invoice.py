@@ -17,6 +17,7 @@ class InvoiceType(str, Enum):
     """Типы инвойса"""
     SUBSCRIPTION = "SUBSCRIPTION"  # Оплата абонемента
     TRAINING = "TRAINING"  # Оплата разовой тренировки
+    LATE_CANCELLATION_FEE = "LATE_CANCELLATION_FEE"  # Штраф за позднюю отмену
 
 
 class Invoice(Base):
@@ -40,7 +41,6 @@ class Invoice(Base):
     cancelled_at = Column(DateTime(timezone=True), nullable=True)  # Дата отмены
     
     # Связи с пользователями
-    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Кто создал
     cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Кто отменил
     
     # Флаг автопродления
@@ -51,7 +51,6 @@ class Invoice(Base):
     student = relationship("Student", backref="student_invoices")
     subscription = relationship("Subscription", backref="invoices")
     training = relationship("RealTraining", backref="invoices")
-    created_by = relationship("User", foreign_keys=[created_by_id])
     cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
     auto_renewal_subscription = relationship("StudentSubscription", foreign_keys="StudentSubscription.auto_renewal_invoice_id")
 

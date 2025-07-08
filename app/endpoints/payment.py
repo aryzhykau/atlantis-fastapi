@@ -124,19 +124,39 @@ def get_filtered_payments(
     )
 
 
-@router.post("/history", response_model=PaymentHistoryListResponse)
+@router.get("/history", response_model=PaymentHistoryListResponse)
 def get_payment_history(
-    filters: PaymentHistoryFilterRequest,
+    operation_type: str = Query(None, description="Тип операции"),
+    client_id: int = Query(None, description="ID клиента"),
+    created_by_id: int = Query(None, description="ID создателя операции"),
+    date_from: str = Query(None, description="Дата начала периода (YYYY-MM-DD)"),
+    date_to: str = Query(None, description="Дата окончания периода (YYYY-MM-DD)"),
+    amount_min: float = Query(None, description="Минимальная сумма"),
+    amount_max: float = Query(None, description="Максимальная сумма"),
+    description_search: str = Query(None, description="Поиск по описанию"),
+    skip: int = Query(0, description="Количество записей для пропуска"),
+    limit: int = Query(100, description="Максимальное количество записей"),
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
     """
     Получение истории всех транзакций с фильтрами и пагинацией.
     Только для админов.
-    
-    Args:
-        filters: Параметры фильтрации и пагинации
     """
+    # Создаем объект фильтров из query параметров
+    filters = PaymentHistoryFilterRequest(
+        operation_type=operation_type,
+        client_id=client_id,
+        created_by_id=created_by_id,
+        date_from=date_from,
+        date_to=date_to,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        description_search=description_search,
+        skip=skip,
+        limit=limit
+    )
+    
     service = PaymentService(db)
     result = service.get_payment_history_with_filters(
         user_id=current_user["id"],
