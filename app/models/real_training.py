@@ -36,6 +36,7 @@ class RealTraining(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     cancelled_at = Column(DateTime, nullable=True)
     cancellation_reason = Column(String, nullable=True)
+    processed_at = Column(DateTime, nullable=True)  # Время когда тренировка была обработана (процессинг)
 
     # Relationships
     trainer = relationship("User", back_populates="real_trainings")

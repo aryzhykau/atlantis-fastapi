@@ -13,6 +13,7 @@ from app.models import (
     StudentSubscription,
     Invoice,
     InvoiceType,
+    InvoiceStatus,
 )
 from app.schemas.real_training import (
     RealTrainingCreate,
@@ -104,6 +105,9 @@ class RealTrainingService:
             # Безопасная отмена - устанавливаем статус без штрафа
             student_training.status = AttendanceStatus.CANCELLED_SAFE
             logger.info(f"Safe cancellation for student {student_id} on training {training_id}")
+            
+            # При безопасной отмене также обрабатываем финансовые возвраты
+            await self._process_safe_cancellation_refunds(training, student_training)
         else:
             # Небезопасная отмена - устанавливаем статус со штрафом
             student_training.status = AttendanceStatus.CANCELLED_PENALTY
@@ -152,16 +156,135 @@ class RealTrainingService:
             student_training.cancellation_reason = cancellation_data.reason
 
             # Если нужно запустить финансовые процессы
-            if cancellation_data.process_refunds and student_training.subscription_id:
-                # TODO: Добавить интеграцию с сервисом абонементов
-                # await self.subscription_service.process_training_cancellation(
-                #     student_training.subscription_id,
-                #     training.training_date
-                # )
-                pass
+            if cancellation_data.process_refunds:
+                await self._process_training_cancellation_refunds(training, student_training)
 
         self.db.commit()
-        return training 
+        return training
+
+    async def _process_training_cancellation_refunds(
+        self, 
+        training: RealTraining, 
+        student_training: RealTrainingStudent
+    ) -> None:
+        """
+        Обрабатывает финансовые возвраты при отмене тренировки:
+        - Возвращает занятие в абонемент если тренировка уже была обработана
+        - Отменяет инвойс и возвращает средства если есть
+        """
+        student_id = student_training.student_id
+        
+        # Проверяем, была ли тренировка уже обработана (процессинг)
+        was_processed = training.processed_at is not None
+        
+        # Ищем активный абонемент
+        active_subscription = self.db.query(StudentSubscription).filter(
+            and_(
+                StudentSubscription.student_id == student_id,
+                StudentSubscription.status == "active",  # Используем вычисляемое свойство
+                StudentSubscription.start_date <= training.training_date,
+                StudentSubscription.end_date >= training.training_date,
+            )
+        ).first()
+
+        if active_subscription and was_processed:
+            # Занятие уже было списано - возвращаем его
+            active_subscription.sessions_left += 1
+            logger.info(f"Training cancellation: Session returned to subscription for student {student_id}. "
+                       f"Sessions left: {active_subscription.sessions_left} (was processed)")
+        elif active_subscription and not was_processed:
+            # Занятие еще не списано - ничего не возвращаем
+            logger.info(f"Training cancellation: Session not returned for student {student_id} "
+                       f"(not yet processed, sessions left: {active_subscription.sessions_left})")
+        
+        # Ищем и отменяем инвойс, если он существует
+        invoice = self.db.query(Invoice).filter(
+            and_(
+                Invoice.student_id == student_id,
+                Invoice.training_id == training.id,
+                Invoice.status != InvoiceStatus.CANCELLED
+            )
+        ).first()
+
+        if invoice:
+            # Отменяем инвойс
+            invoice.status = InvoiceStatus.CANCELLED
+            invoice.cancelled_at = datetime.now(timezone.utc)
+            invoice.cancellation_reason = f"Отмена тренировки: {training.cancellation_reason}"
+            
+            # Возвращаем средства на баланс клиента
+            student = self.db.query(Student).filter(Student.id == student_id).first()
+            if student and student.client:
+                student.client.balance += invoice.amount
+                logger.info(f"Training cancellation: Invoice {invoice.id} cancelled and "
+                           f"{invoice.amount}р returned to client {student.client.id} balance")
+        else:
+            logger.info(f"Training cancellation: No invoice found for student {student_id} on training {training.id}")
+            
+        # Примечание: Занятия в абонементе не возвращаем, так как они списываются 
+        # только при генерации инвойсов на завтра (вечером), а не при записи на тренировку
+
+    async def _process_safe_cancellation_refunds(
+        self,
+        training: RealTraining,
+        student_training: RealTrainingStudent
+    ) -> None:
+        """
+        Обрабатывает возвраты при безопасной отмене:
+        - Возвращает занятие в абонемент если тренировка уже была обработана
+        - Отменяет инвойс и возвращает средства если есть
+        """
+        student_id = student_training.student_id
+        training_id = student_training.real_training_id
+
+        # Проверяем, была ли тренировка уже обработана (процессинг)
+        was_processed = training.processed_at is not None
+        
+        # Ищем активный абонемент
+        active_subscription = self.db.query(StudentSubscription).filter(
+            and_(
+                StudentSubscription.student_id == student_id,
+                StudentSubscription.status == "active",  # Используем вычисляемое свойство
+                StudentSubscription.start_date <= training.training_date,
+                StudentSubscription.end_date >= training.training_date,
+            )
+        ).first()
+
+        if active_subscription and was_processed:
+            # Занятие уже было списано - возвращаем его
+            active_subscription.sessions_left += 1
+            logger.info(f"Safe cancellation: Session returned to subscription for student {student_id} on training {training_id}. "
+                       f"Sessions left: {active_subscription.sessions_left} (was processed)")
+        elif active_subscription and not was_processed:
+            # Занятие еще не списано - ничего не возвращаем
+            logger.info(f"Safe cancellation: Session not returned for student {student_id} on training {training_id} "
+                       f"(not yet processed, sessions left: {active_subscription.sessions_left})")
+
+        # Отменяем инвойс, если он существует и не отменен
+        invoice = self.db.query(Invoice).filter(
+            and_(
+                Invoice.student_id == student_id,
+                Invoice.training_id == training_id,
+                Invoice.status != InvoiceStatus.CANCELLED
+            )
+        ).first()
+
+        if invoice:
+            invoice.status = InvoiceStatus.CANCELLED
+            invoice.cancelled_at = datetime.now(timezone.utc)
+            invoice.cancellation_reason = f"Безопасная отмена участия: {student_training.cancellation_reason}"
+            
+            # Возвращаем средства на баланс клиента
+            student = self.db.query(Student).filter(Student.id == student_id).first()
+            if student and student.client:
+                student.client.balance += invoice.amount
+                logger.info(f"Safe cancellation: Invoice {invoice.id} cancelled and "
+                           f"{invoice.amount}р returned to client {student.client.id} balance")
+        else:
+            logger.info(f"Safe cancellation: No invoice found for student {student_id} on training {training_id}")
+            
+        # Примечание: Занятия в абонементе не возвращаем, так как они списываются 
+        # только при генерации инвойсов на завтра (вечером), а не при записи на тренировку
 
     def add_student_to_training(
         self,
@@ -195,7 +318,7 @@ class RealTrainingService:
         if training.training_type.is_subscription_only:
             active_subscription = self.db.query(StudentSubscription).filter(
                 StudentSubscription.student_id == student.id,
-                StudentSubscription.is_active == True,
+                StudentSubscription.status == "active",  # Используем вычисляемое свойство
                 StudentSubscription.start_date <= training.training_date,
                 StudentSubscription.end_date >= training.training_date,
             ).first()
@@ -248,7 +371,7 @@ class RealTrainingService:
     def _handle_present_status(self, db_training: RealTraining, student_id: int):
         active_subscription = self.db.query(StudentSubscription).filter(
             StudentSubscription.student_id == student_id,
-            StudentSubscription.is_active == True,
+            StudentSubscription.status == "active",  # Используем вычисляемое свойство
             StudentSubscription.start_date <= db_training.training_date,
             StudentSubscription.end_date >= db_training.training_date,
         ).first()
@@ -305,7 +428,7 @@ class RealTrainingService:
         """
         active_subscription = self.db.query(StudentSubscription).filter(
             StudentSubscription.student_id == student_id,
-            StudentSubscription.status == "active",
+            StudentSubscription.status == "active",  # Используем вычисляемое свойство
             StudentSubscription.start_date <= training.training_date,
             StudentSubscription.end_date >= training.training_date,
         ).first()

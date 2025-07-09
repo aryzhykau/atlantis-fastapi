@@ -1,4 +1,4 @@
-from datetime import date, time, datetime, timedelta
+from datetime import date, time, datetime, timedelta, timezone
 import json
 import pytest
 from fastapi import status
@@ -16,7 +16,8 @@ from app.models import (
     StudentSubscription,
     Subscription,
     Invoice,
-    InvoiceType
+    InvoiceType,
+    InvoiceStatus
 )
 from app.models.user import UserRole
 from app.schemas.attendance import AttendanceStatus
@@ -200,7 +201,7 @@ def test_generate_next_week_trainings(db_session: Session, training_template, te
 def test_generate_next_week_endpoint_as_admin(client, auth_headers, training_template, template_with_student):
     """Тест эндпойнта генерации тренировок с API ключом"""
     # Эндпоинт использует API ключ для cron-задач, а не JWT токены
-    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    api_headers = {"X-API-Key": "test-cron-api-key-12345"}
     response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -289,7 +290,7 @@ def test_generate_next_week_with_frozen_student(db_session: Session, training_te
 def test_cancel_training_as_admin(client, auth_headers, training_template, template_with_student):
     """Тест отмены тренировки администратором"""
     # Создаем тренировку через генерацию
-    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    api_headers = {"X-API-Key": "test-cron-api-key-12345"}
     response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     training_id = response.json()["trainings"][0]["id"]
@@ -320,7 +321,7 @@ def test_cancel_training_as_admin(client, auth_headers, training_template, templ
 def test_cancel_training_as_non_admin(client, auth_headers, training_template, template_with_student, trainer, trainer_auth_headers):
     """Тест что не-администратор не может отменить тренировку"""
     # Создаем тренировку через генерацию
-    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    api_headers = {"X-API-Key": "test-cron-api-key-12345"}
     response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     training_id = response.json()["trainings"][0]["id"]
@@ -341,7 +342,7 @@ def test_cancel_training_as_non_admin(client, auth_headers, training_template, t
 def test_cancel_already_cancelled_training(client, auth_headers, training_template, template_with_student):
     """Тест что нельзя отменить уже отмененную тренировку"""
     # Создаем тренировку через генерацию
-    api_headers = {"X-API-Key": "your-secure-api-key-here"}
+    api_headers = {"X-API-Key": "test-cron-api-key-12345"}
     response = client.post("/real-trainings/generate-next-week", headers=api_headers)
     assert response.status_code == status.HTTP_200_OK
     training_id = response.json()["trainings"][0]["id"]
@@ -369,7 +370,7 @@ def test_cancel_already_cancelled_training(client, auth_headers, training_templa
 
 # Тесты для отмены студентов
 def test_cancel_student_safe_cancellation(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
-    """Тест безопасной отмены студента (>12 часов до начала) - занятие НЕ должно списываться"""
+    """Тест безопасной отмены студента (>12 часов до начала) - инвойс должен отменяться"""
     # Создаем тренировку на завтра (безопасная отмена)
     tomorrow = date.today() + timedelta(days=1)
     training = RealTraining(
@@ -384,43 +385,157 @@ def test_cancel_student_safe_cancellation(client, auth_headers, training_templat
     db_session.commit()
     db_session.refresh(training)
     
-    # Добавляем студента на тренировку с привязкой к абонементу
+    # Добавляем студента на тренировку
     student_training = RealTrainingStudent(
         real_training_id=training.id,
         student_id=template_with_student.student_id,
-        subscription_id=student_subscription.id
+        status=AttendanceStatus.REGISTERED
     )
     db_session.add(student_training)
     db_session.commit()
     
-    # Запоминаем количество занятий до отмены
-    sessions_before = student_subscription.sessions_left
+    # Симулируем что процессинг уже произошел - устанавливаем флаг processed_at
+    training.processed_at = datetime.now(timezone.utc)
+    # И списываем занятие с абонемента
+    student_subscription.sessions_left -= 1
+    db_session.commit()
+    db_session.refresh(student_subscription)
     
-    # Отменяем студента (безопасная отмена)
-    notification_time = datetime.now() - timedelta(hours=13)  # 13 часов до начала
+    sessions_before = student_subscription.sessions_left  # Теперь 7 занятий
+    
+    # Создаем инвойс для студента (симулируем что инвойс уже создан)
+    student = db_session.query(Student).filter(Student.id == template_with_student.student_id).first()
+    invoice = Invoice(
+        client_id=student.client_id,
+        student_id=student.id,
+        training_id=training.id,
+        type=InvoiceType.TRAINING,
+        amount=500.0,
+        status=InvoiceStatus.UNPAID,
+        description="Тестовый инвойс"
+    )
+    db_session.add(invoice)
+    db_session.commit()
+    
+    # Запоминаем начальный баланс клиента
+    initial_balance = student.client.balance
+    
+    # Отменяем участие студента (безопасная отмена)
+    cancellation_data = {
+        "reason": "Тестовая безопасная отмена",
+        "notification_time": (datetime.now(timezone.utc) - timedelta(hours=13)).isoformat()
+    }
+
     response = client.request(
         "DELETE",
         f"/real-trainings/{training.id}/students/{template_with_student.student_id}/cancel",
         headers={**auth_headers, "Content-Type": "application/json"},
-        json={
-            "notification_time": notification_time.isoformat(),
-            "reason": "Safe cancellation test"
-        }
+        json=cancellation_data
+    )
+
+    assert response.status_code == 204
+    
+    # Проверяем что статус студента изменен на безопасную отмену
+    db_session.refresh(student_training)
+    assert student_training.status == AttendanceStatus.CANCELLED_SAFE
+    assert student_training.cancellation_reason == "Тестовая безопасная отмена"
+    
+    # Проверяем что инвойс отменен
+    db_session.refresh(invoice)
+    assert invoice.status == InvoiceStatus.CANCELLED
+    assert invoice.cancelled_at is not None
+    
+    # Проверяем что средства возвращены на баланс клиента
+    db_session.refresh(student.client)
+    assert student.client.balance == initial_balance + 500.0
+    
+    # Проверяем что занятие возвращено в абонемент (так как процессинг уже произошел)
+    db_session.refresh(student_subscription)
+    assert student_subscription.sessions_left == sessions_before + 1  # Стало 8 занятий
+
+
+def test_cancel_training_with_refunds(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
+    """Тест полной отмены тренировки с обработкой финансовых возвратов"""
+    # Создаем тренировку на завтра
+    tomorrow = date.today() + timedelta(days=1)
+    training = RealTraining(
+        training_date=tomorrow,
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента на тренировку
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        status=AttendanceStatus.REGISTERED
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Симулируем что процессинг уже произошел - устанавливаем флаг processed_at
+    training.processed_at = datetime.now(timezone.utc)
+    # И списываем занятие с абонемента
+    student_subscription.sessions_left -= 1
+    db_session.commit()
+    db_session.refresh(student_subscription)
+    
+    sessions_before = student_subscription.sessions_left  # Теперь 7 занятий
+    
+    # Создаем инвойс для студента (симулируем что инвойс уже создан)
+    student = db_session.query(Student).filter(Student.id == template_with_student.student_id).first()
+    invoice = Invoice(
+        client_id=student.client_id,
+        student_id=student.id,
+        training_id=training.id,
+        type=InvoiceType.TRAINING,
+        amount=500.0,
+        status=InvoiceStatus.UNPAID,
+        description="Тестовый инвойс"
+    )
+    db_session.add(invoice)
+    db_session.commit()
+    
+    # Запоминаем начальный баланс клиента
+    initial_balance = student.client.balance
+    
+    # Отменяем тренировку
+    cancellation_data = {
+        "reason": "Тестовая отмена",
+        "process_refunds": True
+    }
+    
+    response = client.post(
+        f"/real-trainings/{training.id}/cancel",
+        json=cancellation_data,
+        headers=auth_headers
     )
     
-    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert response.status_code == 200
     
-    # Проверяем, что студент остается в тренировке с статусом безопасной отмены
-    remaining_students = db_session.query(RealTrainingStudent).filter(
-        RealTrainingStudent.real_training_id == training.id
-    ).all()
-    assert len(remaining_students) == 1
-    assert remaining_students[0].status == AttendanceStatus.CANCELLED_SAFE
-    assert remaining_students[0].cancelled_at is not None
+    # Проверяем что тренировка отменена
+    db_session.refresh(training)
+    assert training.cancelled_at is not None
+    assert training.cancellation_reason == "Тестовая отмена"
     
-    # Проверяем, что занятие НЕ списалось с абонемента (безопасная отмена)
+    # Проверяем что инвойс отменен
+    db_session.refresh(invoice)
+    assert invoice.status == InvoiceStatus.CANCELLED
+    assert invoice.cancelled_at is not None
+    
+    # Проверяем что средства возвращены на баланс клиента
+    db_session.refresh(student.client)
+    assert student.client.balance == initial_balance + 500.0
+    
+    # Проверяем что занятие возвращено в абонемент (так как процессинг уже произошел)
     db_session.refresh(student_subscription)
-    assert student_subscription.sessions_left == sessions_before
+    assert student_subscription.sessions_left == sessions_before + 1  # Стало 8 занятий
 
 
 def test_cancel_student_unsafe_cancellation(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
@@ -672,3 +787,111 @@ def test_cancel_student_unauthorized(client, training_template, template_with_st
     )
     
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_cancel_training_before_processing(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
+    """Тест отмены тренировки ДО процессинга (занятие НЕ возвращается)"""
+    # Создаем тренировку на завтра
+    tomorrow = date.today() + timedelta(days=1)
+    training = RealTraining(
+        training_date=tomorrow,
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента на тренировку
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        status=AttendanceStatus.REGISTERED
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Запоминаем количество занятий в абонементе
+    sessions_before = student_subscription.sessions_left
+    
+    # Отменяем тренировку ДО процессинга (processed_at = None)
+    cancellation_data = {
+        "reason": "Отмена до процессинга",
+        "process_refunds": True
+    }
+    
+    response = client.post(
+        f"/real-trainings/{training.id}/cancel",
+        json=cancellation_data,
+        headers=auth_headers
+    )
+    
+    assert response.status_code == 200
+    
+    # Проверяем что тренировка отменена
+    db_session.refresh(training)
+    assert training.cancelled_at is not None
+    
+    # Проверяем что занятие НЕ возвращено в абонемент (так как процессинг еще не произошел)
+    db_session.refresh(student_subscription)
+    assert student_subscription.sessions_left == sessions_before
+
+
+def test_cancel_training_after_processing(client, auth_headers, training_template, template_with_student, student_subscription, db_session):
+    """Тест отмены тренировки ПОСЛЕ процессинга (занятие возвращается)"""
+    # Создаем тренировку на завтра
+    tomorrow = date.today() + timedelta(days=1)
+    training = RealTraining(
+        training_date=tomorrow,
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+        template_id=training_template.id,
+        is_template_based=True
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+    
+    # Добавляем студента на тренировку
+    student_training = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        status=AttendanceStatus.REGISTERED
+    )
+    db_session.add(student_training)
+    db_session.commit()
+    
+    # Симулируем что процессинг уже произошел - устанавливаем флаг processed_at
+    training.processed_at = datetime.now(timezone.utc)
+    # И списываем занятие с абонемента
+    student_subscription.sessions_left -= 1
+    db_session.commit()
+    db_session.refresh(student_subscription)
+    
+    sessions_before = student_subscription.sessions_left  # Теперь 7 занятий
+    
+    # Отменяем тренировку ПОСЛЕ процессинга (processed_at установлен)
+    cancellation_data = {
+        "reason": "Отмена после процессинга",
+        "process_refunds": True
+    }
+    
+    response = client.post(
+        f"/real-trainings/{training.id}/cancel",
+        json=cancellation_data,
+        headers=auth_headers
+    )
+    
+    assert response.status_code == 200
+    
+    # Проверяем что тренировка отменена
+    db_session.refresh(training)
+    assert training.cancelled_at is not None
+    
+    # Проверяем что занятие возвращено в абонемент (так как процессинг уже произошел)
+    db_session.refresh(student_subscription)
+    assert student_subscription.sessions_left == sessions_before + 1  # Стало 8 занятий
