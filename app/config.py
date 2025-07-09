@@ -19,7 +19,7 @@ class Config(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_DISCOVERY_URL: str = os.getenv("GOOGLE_DISCOVERY_URL", "")
 
-    model_config = ConfigDict(env_file=os.getenv("ENV_FILE", ".env"))
+    model_config = ConfigDict(env_file=os.getenv("ENV_FILE", ".envdev"))
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:

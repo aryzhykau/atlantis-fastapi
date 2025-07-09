@@ -1,21 +1,21 @@
-FROM python:3.10
+FROM python:3.10-slim
+
 WORKDIR /api
 
-RUN pip install poetry
+# Установка uv
+RUN pip install uv
 
+# Копирование файлов зависимостей
+COPY pyproject.toml uv.lock ./
 
-# RUN apt-get update && apt-get upgrade -y
-# RUN  curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/
-#get-poetry.py | python -
-#RUN bash -c "source $HOME/.poetry/env"
+# Установка зависимостей через uv
+RUN uv sync --frozen
 
-COPY ./pyproject.toml /api/pyproject.toml
-
-RUN poetry install --no-root
-
+# Копирование исходного кода
 COPY . .
 
-COPY ./entrypoint.sh /entrypoint.sh
+# Копирование и настройка entrypoint
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

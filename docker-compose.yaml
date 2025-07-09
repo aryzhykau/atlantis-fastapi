@@ -14,6 +14,37 @@ services:
     ports:
       - "5433:5432"  # Открываем порт PostgreSQL для подключения извне
 
+  # API сервис
+  api:
+    build: .
+    container_name: atlantis-api
+    ports:
+      - "8000:8000"  # Открываем порт API
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@db:5432/mydatabase
+    depends_on:
+      - db
+    volumes:
+      - .:/api  # Монтируем код для разработки
+    command: ["startapp"]
+
+# Том для хранения данных PostgreSQL
+version: '3.8'
+
+services:
+  # Сервис для PostgreSQL
+  db:
+    image: postgres:13
+    container_name: postgres
+    environment:
+      POSTGRES_USER: myuser            # Имя пользователя для базы данных
+      POSTGRES_PASSWORD: mypassword    # Пароль для пользователя
+      POSTGRES_DB: mydatabase         # Имя базы данных
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data  # Тома для хранения данных PostgreSQL
+    ports:
+      - "5433:5432"  # Открываем порт PostgreSQL для подключения извне
+
 
 # Том для хранения данных PostgreSQL
 volumes:
