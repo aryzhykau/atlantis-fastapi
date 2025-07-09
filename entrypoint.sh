@@ -1,18 +1,15 @@
 #!/bin/sh
 set -e 
 
-
 run_migrations(){
-	poetry run alembic upgrade head
-	echo "migrations start"
+	uv run alembic upgrade head
+	echo "migrations completed"
 }
 
 start_app(){
-	poetry run uvicorn app.main:app --reload --host 0.0.0.0
-	echo "start app"
+	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	echo "app started"
 }
-
-
 
 case "$1" in 
 	domigrations)
