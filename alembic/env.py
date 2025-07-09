@@ -18,14 +18,14 @@ if config.config_file_name is not None:
 from app.database import Base
 
 target_metadata = Base.metadata
-from app.entities.users.models import User, ClientSubscription
-from app.entities.trainings.models import Training
-from app.entities.training_types.models import TrainingType
-from app.entities.invoices.models import Invoice
-from app.entities.subscriptions.models import Subscription
-from app.entities.payments.models import Payment
-from app.entities.relations_models.invoice_payments import InvoicePayments
 from app.config import Config
+from app.models import User
+from app.models import Student
+from app.models import TrainingType
+from app.models import Subscription, StudentSubscription
+from app.models import TrainingStudentTemplate, TrainingTemplate
+from app.models import RealTraining, RealTrainingStudent
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

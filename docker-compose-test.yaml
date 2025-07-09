@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./atlantis-frontend/atlantis-typescript
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./atlantis-frontend/atlantis-typescript:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    command: ["npm", "run", "dev", "--", "--host"]
+
+  backendmigrations:
+    build: .
+    environment:
+      POSTGRES_HOST: "db:5432"
+      POSTGRES_USER: "myuser"
+      POSTGRES_PASSWORD: "mypassword"
+      POSTGRES_DB: "mydatabase"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["domigrations"]
+    restart: "no"
+
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./atlantis-fastapi:/app
+    environment:
+      POSTGRES_HOST: "db:5432"
+      POSTGRES_USER: "myuser"
+      POSTGRES_PASSWORD: "mypassword"
+      POSTGRES_DB: "mydatabase"
+      JWT_SECRET_KEY: "hingshfiuehrigdukyshekjxflhas;kou498xfmh"
+      GOOGLE_CLIENT_ID: "317287995854-hjm52r9lvi0sungac6v5vbv2h2qr9cut.apps.googleusercontent.com"
+      GOOGLE_DISCOVERY_URL: "https://www.googleapis.com/oauth2/v2/userinfo"
+    depends_on:
+      - backendmigrations
+    command: ["startapp"]
+
+  db:
+    image: postgres:13
+    container_name: postgres
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydatabase
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "mydatabase", "-U", "myuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+
+# Том для хранения данных PostgreSQL
+volumes:
+  postgres_data:

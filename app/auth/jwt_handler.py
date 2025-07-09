@@ -18,9 +18,11 @@ def verify_jwt_token(token: str = Depends(oauth2_scheme_access)):
     """
     Verify JWT access token for correctness and expiration time.
     """
+    print("Verify JWT token:")
     try:
         if config.ENVIRONMENT == "dev":
             if token == "dev_token":
+                print("returning dev_token")
                 return {"email": config.DEV_ADMIN_EMAIL, "role": "ADMIN", "id": 1}
         # Decode the JWT token
         payload = jwt.decode(token, config.JWT_SECRET_KEY, algorithms=[config.JWT_ALGORITHM])
@@ -30,6 +32,7 @@ def verify_jwt_token(token: str = Depends(oauth2_scheme_access)):
         exp = payload.get("exp")
 
         if exp is None:
+            print("exp is None")
             raise HTTPException(status_code=401, detail="Missing 'exp' field in token")
 
         current_time = datetime.now(tz=timezone.utc)
@@ -41,9 +44,12 @@ def verify_jwt_token(token: str = Depends(oauth2_scheme_access)):
 
         logger.debug(f"Token payload: {payload}")
         # Return payload details (like email, role, id) on success
-        return {"email": payload["sub"], "role": payload["role"], "id": payload["id"]}
+        # Handle both "sub" and "email" fields for backward compatibility
+        email = payload.get("sub") or payload.get("email")
+        return {"email": email, "role": payload["role"], "id": payload["id"]}
 
     except JWTError as e:
+        print("JWTError exception:")
         logger.error(f"JWT verification error: {str(e)}")
         raise HTTPException(status_code=401, detail="Token is invalid or expired")
 

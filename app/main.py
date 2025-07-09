@@ -1,24 +1,38 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from app.dependencies import get_db
 from app.auth.auth import router as auth_router
-from app.endpoints.clients import router as clients_router
-from app.endpoints.trainers import router as trainers_router
-from app.endpoints.users import router as users_router
-from app.entities.invoices.endpoints import router as invoices_router
-from app.entities.subscriptions.endpoints import subscriptions_router
-from app.entities.training_types.endpoints import router as training_types_router
-# from app.endpoints.admins import router as admins_router
-from app.entities.trainings.endpoints import router as trainings_router
+from app.endpoints.user import router as user_router
+from app.endpoints.client import router as client_router
+from app.endpoints.trainer import router as trainer_router
+from app.endpoints.training_type import router as training_type_router
+from app.endpoints.subscription import router as subscription_router
+from app.endpoints.student import router as student_router
+from app.endpoints.training_template import router as training_template_router
+from app.endpoints.training_student_template import router as training_student_template_router
+from app.endpoints.real_trainings import router as real_training_router
+from app.endpoints.invoice import router as invoice_router
+from app.endpoints.payment import router as payment_router
+from app.endpoints.cron import router as cron_router
 
 logging.basicConfig(level=logging.DEBUG)
 # logging.getLogger("sqlalchemy").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-app = FastAPI()
+app = FastAPI(
+    title="Atlantis API",
+    description="API для управления тренировками и финансами",
+    version="1.0.0"
+)
 
 
 app.add_middleware(
@@ -30,18 +44,57 @@ app.add_middleware(
 )
 
 
+# Регистрация маршрутов
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(client_router)
+app.include_router(trainer_router)
+app.include_router(training_type_router)
+app.include_router(subscription_router)
+app.include_router(student_router)
+app.include_router(training_template_router)
+app.include_router(training_student_template_router)
+app.include_router(real_training_router)
+app.include_router(invoice_router)
+app.include_router(payment_router)
+app.include_router(cron_router)
+
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to User Management API"}
+
+
 @app.get("/healthz")
 async def healthz():
     return {"message": "Healthy!"}
 
 
-# Регистрация маршрутов
-app.include_router(auth_router, prefix="/auth")
-app.include_router(users_router, prefix="/users", tags=["users"])
-app.include_router(clients_router, prefix="/clients", tags=["clients"])
-app.include_router(trainers_router, prefix="/trainers", tags=["trainers"])
-app.include_router(trainings_router, prefix="/trainings", tags=["trainings"])
-app.include_router(training_types_router, prefix="/training_types", tags=["training_types"])
-app.include_router(subscriptions_router, prefix="/subscriptions", tags=["subscriptions"])
-app.include_router(invoices_router, prefix="/invoices", tags=["invoices"])
-# app.include_router(admins_router, prefix="/admin", tags=["admins"])
+# Обработка ошибок валидации
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = []
+    for error in exc.errors():
+        if 'ctx' in error and 'error' in error['ctx']:
+            # Если ошибка содержит ValueError, берем его сообщение
+            if isinstance(error['ctx']['error'], ValueError):
+                error['msg'] = str(error['ctx']['error'])
+                del error['ctx']  # Удаляем ctx, так как он содержит несериализуемые объекты
+        errors.append(error)
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": errors},
+    )
+
+
+# Проверка подключения к базе данных
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    try:
+        # Проверяем подключение к базе данных
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        logging.error(f"Health check failed: {str(e)}")
+        return {"status": "unhealthy", "database": "disconnected"}

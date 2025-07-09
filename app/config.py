@@ -1,5 +1,6 @@
 import os
 
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -18,8 +19,7 @@ class Config(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_DISCOVERY_URL: str = os.getenv("GOOGLE_DISCOVERY_URL", "")
 
-    class Config:
-        env_file = os.getenv("ENV_FILE", ".env")
+    model_config = ConfigDict(env_file=os.getenv("ENV_FILE", ".env"))
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
