@@ -397,13 +397,41 @@ class PaymentService:
             period: Период для фильтрации (week/month/3months)
         """
         # Валидация периода
-        if period not in ["week", "month", "3months"]:
+        if period not in ["week", "2weeks"]:
             raise HTTPException(
                 status_code=400,
                 detail="Invalid period. Must be 'week', 'month' or '3months'"
             )
         
         return crud.get_payments_with_filters(
+            self.db,
+            user_id=user_id,
+            registered_by_me=registered_by_me,
+            period=period
+        )
+
+    def get_payments_with_filters_extended(
+        self,
+        user_id: int,
+        registered_by_me: bool = False,
+        period: str = "week"
+    ) -> List[dict]:
+        """
+        Получение платежей с фильтрацией по регистрировавшему и периоду (с расширенными данными)
+        
+        Args:
+            user_id: ID пользователя (тренера/админа)
+            registered_by_me: Если True, возвращает только платежи зарегистрированные этим пользователем
+            period: Период для фильтрации (week/2weeks)
+        """
+        # Валидация периода
+        if period not in ["week", "2weeks"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid period. Must be 'week' or '2weeks'"
+            )
+        
+        return crud.get_payments_with_filters_extended(
             self.db,
             user_id=user_id,
             registered_by_me=registered_by_me,

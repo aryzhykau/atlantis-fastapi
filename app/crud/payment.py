@@ -99,10 +99,8 @@ def get_payments_with_filters(
     now = datetime.utcnow()
     if period == "week":
         start_date = now - timedelta(days=7)
-    elif period == "month":
-        start_date = now - timedelta(days=30)
-    elif period == "3months":
-        start_date = now - timedelta(days=90)
+    elif period == "2weeks":
+        start_date = now - timedelta(days=14)
     else:
         start_date = now - timedelta(days=7)  # По умолчанию неделя
     
@@ -118,8 +116,82 @@ def get_payments_with_filters(
     # Исключаем отменённые платежи
     query = query.filter(Payment.cancelled_at.is_(None))
     
+    # Жадная загрузка связанных объектов
+    query = query.options(
+        selectinload(Payment.client),
+        selectinload(Payment.registered_by)
+    )
+    
     # Сортировка по дате создания (новые сначала)
     return query.order_by(desc(Payment.payment_date)).all()
+
+
+def get_payments_with_filters_extended(
+    db: Session,
+    user_id: int,
+    registered_by_me: bool = False,
+    period: str = "week"
+) -> List[dict]:
+    """
+    Получение платежей с фильтрацией по регистрировавшему и периоду (с расширенными данными)
+    
+    Args:
+        db: Database session
+        user_id: ID пользователя (тренера/админа)
+        registered_by_me: Если True, возвращает только платежи зарегистрированные этим пользователем
+        period: Период для фильтрации (week/month/3months)
+    """
+    # Вычисляем дату начала периода
+    now = datetime.utcnow()
+    if period == "week":
+        start_date = now - timedelta(days=7)
+    elif period == "2weeks":
+        start_date = now - timedelta(days=14)
+    else:
+        start_date = now - timedelta(days=7)  # По умолчанию неделя
+    
+    # Базовый запрос
+    query = db.query(Payment).filter(
+        Payment.payment_date >= start_date
+    )
+    
+    # Фильтрация по регистрировавшему
+    if registered_by_me:
+        query = query.filter(Payment.registered_by_id == user_id)
+    
+    # Исключаем отменённые платежи
+    query = query.filter(Payment.cancelled_at.is_(None))
+    
+    # Жадная загрузка связанных объектов
+    query = query.options(
+        selectinload(Payment.client),
+        selectinload(Payment.registered_by)
+    )
+    
+    # Сортировка по дате создания (новые сначала)
+    payments = query.order_by(desc(Payment.payment_date)).all()
+    
+    # Преобразуем в словари с расширенными данными
+    extended_payments = []
+    for payment in payments:
+        payment_dict = {
+            'id': payment.id,
+            'client_id': payment.client_id,
+            'amount': payment.amount,
+            'payment_date': payment.payment_date,
+            'description': payment.description,
+            'registered_by_id': payment.registered_by_id,
+            'cancelled_at': payment.cancelled_at,
+            'cancelled_by_id': payment.cancelled_by_id,
+            # Связанные данные
+            'client_first_name': payment.client.first_name if payment.client else None,
+            'client_last_name': payment.client.last_name if payment.client else None,
+            'registered_by_first_name': payment.registered_by.first_name if payment.registered_by else None,
+            'registered_by_last_name': payment.registered_by.last_name if payment.registered_by else None,
+        }
+        extended_payments.append(payment_dict)
+    
+    return extended_payments
 
 
 def get_payment_history_filtered(
@@ -234,10 +306,8 @@ def get_trainer_payments_filtered(
         now = datetime.utcnow()
         if period == "week":
             start_date = now - timedelta(days=7)
-        elif period == "month":
-            start_date = now - timedelta(days=30)
-        elif period == "3months":
-            start_date = now - timedelta(days=90)
+        elif period == "2weeks":
+            start_date = now - timedelta(days=14)
         else:
             start_date = now - timedelta(days=7)  # По умолчанию неделя
         

@@ -7,6 +7,7 @@ from app.dependencies import get_db
 from app.schemas.payment import (
     PaymentCreate, 
     PaymentResponse, 
+    PaymentExtendedResponse,
     ClientBalanceResponse,
     PaymentHistoryFilterRequest,
     PaymentHistoryListResponse
@@ -100,10 +101,10 @@ def get_client_balance(
     return ClientBalanceResponse(client_id=client_id, balance=balance)
 
 
-@router.get("/filtered", response_model=List[PaymentResponse])
+@router.get("/filtered", response_model=List[PaymentExtendedResponse])
 def get_filtered_payments(
     registered_by_me: bool = Query(False, description="Только платежи текущего пользователя"),
-    period: str = Query("week", description="Период: week/month/3months"),
+    period: str = Query("week", description="Период: week/2weeks"),
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
@@ -113,11 +114,11 @@ def get_filtered_payments(
     
     Args:
         registered_by_me: Если True, возвращает только платежи зарегистрированные текущим пользователем
-        period: Период для фильтрации (week/month/3months)
+        period: Период для фильтрации (week/2weeks)
     """
     service = PaymentService(db)
     service.validate_admin_or_trainer(current_user["id"])
-    return service.get_payments_with_filters(
+    return service.get_payments_with_filters_extended(
         user_id=current_user["id"],
         registered_by_me=registered_by_me,
         period=period
