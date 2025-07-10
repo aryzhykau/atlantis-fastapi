@@ -79,7 +79,7 @@ def update_trainer_status_endpoint(trainer_id: int, status_data: StatusUpdate, c
 @router.get("/{trainer_id}/payments", response_model=PaymentHistoryListResponse)
 def get_trainer_payments_endpoint(
     trainer_id: int,
-    period: str = Query("all", description="Период: week/month/3months/all"),
+    period: str = Query("all", description="Период: week/2weeks/all"),
     client_id: Optional[int] = Query(None, description="ID клиента для фильтрации"),
     amount_min: Optional[float] = Query(None, description="Минимальная сумма"),
     amount_max: Optional[float] = Query(None, description="Максимальная сумма"),
@@ -123,10 +123,9 @@ def get_trainer_payments_endpoint(
         
         if period == "week":
             filters.date_from = (today - timedelta(days=7)).strftime("%Y-%m-%d")
-        elif period == "month":
-            filters.date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-        elif period == "3months":
-            filters.date_from = (today - timedelta(days=90)).strftime("%Y-%m-%d")
+        elif period == "2weeks":
+            filters.date_from = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+
     
     service = PaymentService(db)
     result = service.get_payment_history_with_filters(
@@ -146,7 +145,7 @@ def get_trainer_payments_endpoint(
 @router.get("/{trainer_id}/registered-payments", response_model=PaymentListResponse)
 def get_trainer_registered_payments_endpoint(
     trainer_id: int,
-    period: str = Query("all", description="Период: week/month/3months/all"),
+    period: str = Query("all", description="Период: week/2weeks/all"),
     client_id: Optional[int] = Query(None, description="ID клиента для фильтрации"),
     amount_min: Optional[float] = Query(None, description="Минимальная сумма"),
     amount_max: Optional[float] = Query(None, description="Максимальная сумма"),

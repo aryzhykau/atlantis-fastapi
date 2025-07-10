@@ -27,6 +27,24 @@ class PaymentResponse(PaymentBase):
     model_config = {"from_attributes": True}
 
 
+class PaymentExtendedResponse(PaymentBase):
+    """Расширенная схема ответа с информацией о платеже и связанных объектах"""
+    id: int
+    client_id: int
+    payment_date: datetime
+    registered_by_id: int
+    cancelled_at: Optional[datetime] = None
+    cancelled_by_id: Optional[int] = None
+    
+    # Связанные данные
+    client_first_name: Optional[str] = None
+    client_last_name: Optional[str] = None
+    registered_by_first_name: Optional[str] = None
+    registered_by_last_name: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ClientBalanceResponse(BaseModel):
     """Схема ответа с балансом клиента"""
     client_id: int
