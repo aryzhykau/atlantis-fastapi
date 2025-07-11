@@ -18,6 +18,7 @@ class Config(BaseSettings):
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_DISCOVERY_URL: str = os.getenv("GOOGLE_DISCOVERY_URL", "")
+    CRON_API_KEY: str = os.getenv("CRON_API_KEY", "test-cron-api-key-12345")
 
     model_config = ConfigDict(env_file=os.getenv("ENV_FILE", ".env"))
 

@@ -895,3 +895,183 @@ def test_cancel_training_after_processing(client, auth_headers, training_templat
     # Проверяем что занятие возвращено в абонемент (так как процессинг уже произошел)
     db_session.refresh(student_subscription)
     assert student_subscription.sessions_left == sessions_before + 1  # Стало 8 занятий
+
+
+def test_generate_next_week_endpoint_wrong_api_key(client):
+    """Тест эндпойнта генерации с неверным API ключом"""
+    api_headers = {"X-API-Key": "wrong-key"}
+    response = client.post("/real-trainings/generate-next-week", headers=api_headers)
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_generate_next_week_endpoint_no_api_key(client):
+    """Тест эндпойнта генерации без API ключа"""
+    response = client.post("/real-trainings/generate-next-week")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_generate_next_week_with_inactive_trainer(db_session: Session, training_template, trainer):
+    """Тест, что тренировки не создаются для шаблона с неактивным тренером."""
+    # Делаем тренера неактивным
+    trainer.is_active = False
+    db_session.commit()
+
+    # Пытаемся сгенерировать тренировки
+    created_count, _ = generate_next_week_trainings(db_session)
+
+    # Проверяем, что тренировки не были созданы
+    assert created_count == 0
+
+
+def test_generate_next_week_with_inactive_training_type(db_session: Session, training_template, training_type):
+    """Тест, что тренировки не создаются для шаблона с неактивным типом тренировки."""
+    # Делаем тип тренировки неактивным
+    training_type.is_active = False
+    db_session.commit()
+
+    # Пытаемся сгенерировать тренировки
+    created_count, _ = generate_next_week_trainings(db_session)
+
+    # Проверяем, что тренировки не были созданы
+    assert created_count == 0
+
+
+def test_generate_next_week_with_future_start_date_student(db_session: Session, training_template, template_with_student):
+    """Тест, что студент с будущей датой начала не добавляется в тренировку."""
+    # Устанавливаем дату начала в будущем
+    template_with_student.start_date = date.today() + timedelta(days=30)
+    db_session.commit()
+
+    # Генерируем тренировки
+    created_count, trainings = generate_next_week_trainings(db_session)
+
+    assert created_count > 0  # Тренировка должна быть создана
+
+    # Проверяем, что студент не был добавлен
+    students_count = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == trainings[0].id
+    ).count()
+    assert students_count == 0
+
+
+def test_generate_next_week_max_participants_limit(db_session: Session, training_type, training_template, student, create_test_client):
+    """Тест, что соблюдается лимит max_participants."""
+    # Устанавливаем лимит участников
+    training_type.max_participants = 1
+    db_session.commit()
+
+    # Создаем второго студента
+    student2 = Student(
+        first_name="Second",
+        last_name="Student",
+        date_of_birth=date(2001, 1, 1),
+        is_active=True,
+        client_id=create_test_client.id
+    )
+    db_session.add(student2)
+    db_session.commit()
+
+    # Добавляем обоих студентов в шаблон
+    db_session.add_all([
+        TrainingStudentTemplate(
+            training_template_id=training_template.id,
+            student_id=student.id,
+            is_frozen=False,
+            start_date=date.today()
+        ),
+        TrainingStudentTemplate(
+            training_template_id=training_template.id,
+            student_id=student2.id,
+            is_frozen=False,
+            start_date=date.today()
+        )
+    ])
+    db_session.commit()
+
+    # Генерируем тренировки
+    created_count, trainings = generate_next_week_trainings(db_session)
+
+    assert created_count > 0
+
+    # Проверяем, что был добавлен только один студент
+    students_count = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == trainings[0].id
+    ).count()
+    assert students_count == 1
+
+
+def test_generate_subscription_only_training_no_subscription(db_session: Session, training_type, template_with_student):
+    """Тест, что студент без абонемента не добавляется на only-subscription тренировку."""
+    # Делаем тип тренировки только по абонементу
+    training_type.is_subscription_only = True
+    db_session.commit()
+
+    # Генерируем тренировки
+    created_count, trainings = generate_next_week_trainings(db_session)
+    assert created_count > 0
+
+    # Проверяем, что студент не был добавлен
+    students_count = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == trainings[0].id
+    ).count()
+    assert students_count == 0
+
+
+def test_generate_subscription_only_training_with_subscription(db_session: Session, training_type, template_with_student, student_subscription):
+    """Тест, что студент с абонементом добавляется на only-subscription тренировку."""
+    # Делаем тип тренировки только по абонементу
+    training_type.is_subscription_only = True
+    db_session.commit()
+
+    # Убедимся, что у студента есть активный абонемент (фикстура student_subscription)
+    assert student_subscription.student_id == template_with_student.student_id
+
+    # Генерируем тренировки
+    created_count, trainings = generate_next_week_trainings(db_session)
+    assert created_count > 0
+
+    # Проверяем, что студент был добавлен
+    students_count = db_session.query(RealTrainingStudent).filter(
+        RealTrainingStudent.real_training_id == trainings[0].id
+    ).count()
+    assert students_count == 1
+
+
+def test_update_attendance_cannot_set_present(
+    client, trainer_auth_headers, training_template, template_with_student, db_session
+):
+    """
+    Тест: Проверяет, что API возвращает ошибку при попытке вручную
+    установить статус посещения 'PRESENT'.
+    """
+    # Создаем реальную тренировку для теста
+    training = RealTraining(
+        training_date=date.today(),
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+
+    # Добавляем студента на эту тренировку
+    rts = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        status=AttendanceStatus.REGISTERED,
+    )
+    db_session.add(rts)
+    db_session.commit()
+
+    # Пытаемся обновить статус на PRESENT
+    update_data = {"status": AttendanceStatus.PRESENT.value}
+    response = client.put(
+        f"/real-trainings/{training.id}/students/{template_with_student.student_id}/attendance",
+        json=update_data,
+        headers=trainer_auth_headers,
+    )
+
+    # Проверяем, что сервер вернул ошибку валидации
+    assert response.status_code == 422
+    assert "Cannot manually set status to PRESENT" in response.text

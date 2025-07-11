@@ -263,5 +263,81 @@ class TestStudentSubscription:
         assert invoice.subscription_id == test_subscription.id
         assert invoice.is_auto_renewal == True
         assert invoice.status == InvoiceStatus.UNPAID
+        assert invoice.student_subscription_id == new_subscription.id # Проверяем связь с новым абонементом
+
+
+    def test_process_auto_renewals_no_renew_flag(
+        self,
+        db_session: Session,
+        test_student,
+        test_subscription,
+        test_admin
+    ):
+        """Тест, что абонементы без флага is_auto_renew не продлеваются."""
+        service = SubscriptionService(db_session)
+        
+        subscription = service.add_subscription_to_student(
+            student_id=test_student.id,
+            subscription_id=test_subscription.id,
+            is_auto_renew=False,  # Флаг выключен
+            created_by_id=test_admin.id
+        )
+        subscription.end_date = datetime.utcnow()
+        db_session.commit()
+        
+        renewed_subscriptions = service.process_auto_renewals(test_admin.id)
+        assert len(renewed_subscriptions) == 0
+
+
+    def test_process_auto_renewals_wrong_end_date(
+        self,
+        db_session: Session,
+        test_student,
+        test_subscription,
+        test_admin
+    ):
+        """Тест, что абонементы с датой окончания не сегодня не продлеваются."""
+        service = SubscriptionService(db_session)
+        
+        subscription = service.add_subscription_to_student(
+            student_id=test_student.id,
+            subscription_id=test_subscription.id,
+            is_auto_renew=True,
+            created_by_id=test_admin.id
+        )
+        # Заканчивается завтра
+        subscription.end_date = datetime.utcnow() + timedelta(days=1)
+        db_session.commit()
+        
+        renewed_subscriptions = service.process_auto_renewals(test_admin.id)
+        assert len(renewed_subscriptions) == 0
+
+
+    def test_process_auto_renewals_duplicate_prevention(
+        self,
+        db_session: Session,
+        test_student,
+        test_subscription,
+        test_admin
+    ):
+        """Тест защиты от дублирования при повторном запуске."""
+        service = SubscriptionService(db_session)
+        
+        subscription = service.add_subscription_to_student(
+            student_id=test_student.id,
+            subscription_id=test_subscription.id,
+            is_auto_renew=True,
+            created_by_id=test_admin.id
+        )
+        subscription.end_date = datetime.utcnow()
+        db_session.commit()
+        
+        # Первый запуск
+        renewed_first_run = service.process_auto_renewals(test_admin.id)
+        assert len(renewed_first_run) == 1
+        
+        # Второй запуск
+        renewed_second_run = service.process_auto_renewals(test_admin.id)
+        assert len(renewed_second_run) == 0
 
 

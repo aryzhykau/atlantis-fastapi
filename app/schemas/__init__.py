@@ -7,7 +7,6 @@ from .real_training import (
 )
 
 from .real_training_student import (
-    RealTrainingStudentBase,
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
     RealTrainingStudentResponse

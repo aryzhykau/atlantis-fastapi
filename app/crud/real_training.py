@@ -363,7 +363,7 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
                     # Ищем активный абонемент у студента на дату будущей тренировки
                     active_subscription = db.query(StudentSubscription).filter(
                         StudentSubscription.student_id == template_student.student_id,
-                        StudentSubscription.is_active == True,
+                        StudentSubscription.status == 'active',
                         StudentSubscription.start_date <= template_date,
                         StudentSubscription.end_date >= template_date,
                     ).first()

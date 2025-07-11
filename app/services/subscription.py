@@ -278,8 +278,12 @@ class SubscriptionService:
                 transferred_sessions=min(subscription.sessions_left, 3)  # Фиксируем количество перенесенных тренировок
             )
             self.db.add(new_subscription)
+            self.db.flush() # Получаем ID нового абонемента
+
+            # Связываем инвойс с новым абонементом (для бизнес-логики)
+            auto_renewal_invoice.student_subscription_id = new_subscription.id
             
-            # Связываем текущий абонемент с инвойсом автопродления
+            # Связываем текущий абонемент с инвойсом автопродления (для защиты от дублей)
             subscription.auto_renewal_invoice_id = auto_renewal_invoice.id
             
             renewed_subscriptions.append(new_subscription)

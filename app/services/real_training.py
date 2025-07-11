@@ -355,34 +355,14 @@ class RealTrainingService:
         
         if "status" in update_dict:
             status = update_dict["status"]
-            # Если студент отмечен как ПРИСУТСТВУЮЩИЙ
-            if status == AttendanceStatus.PRESENT:
-                self._handle_present_status(db_training, student_id)
-            
             # Если отмена, применяем логику "умных штрафов"
-            elif status == AttendanceStatus.CANCELLED:
+            if status == AttendanceStatus.CANCELLED:
                 reason = self._handle_cancellation(db_training, student_id, update_data)
                 update_dict["cancellation_reason"] = reason
 
         return crud.update_student_attendance_db(
             self.db, db_student, update_dict, marker_id
         )
-
-    def _handle_present_status(self, db_training: RealTraining, student_id: int):
-        active_subscription = self.db.query(StudentSubscription).filter(
-            StudentSubscription.student_id == student_id,
-            StudentSubscription.status == "active",  # Используем вычисляемое свойство
-            StudentSubscription.start_date <= db_training.training_date,
-            StudentSubscription.end_date >= db_training.training_date,
-        ).first()
-
-        if active_subscription:
-            if active_subscription.sessions_left > 0:
-                active_subscription.sessions_left -= 1
-                logger.info(f"Session deducted for student {student_id}")
-            else:
-                logger.warning(f"Student {student_id} attended with 0 sessions left.")
-        # TODO: Логика создания инвойса, если тренировка не по абонементу, а разовая.
 
     def _handle_cancellation(
         self,

@@ -7,6 +7,7 @@ from app.core.security import verify_api_key
 from app.models import User, UserRole
 from app.services.subscription import SubscriptionService
 from app.services.training_processing import TrainingProcessingService
+from app.services.daily_operations import DailyOperationsService
 
 router = APIRouter(prefix="/cron", tags=["cron"])
 
@@ -78,3 +79,15 @@ def generate_invoices(db: Session = Depends(get_db)):
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat()
         } 
+
+
+@router.post("/process-daily-operations", dependencies=[Depends(verify_api_key)])
+def process_daily_operations_endpoint(db: Session = Depends(get_db)):
+    """
+    Запускает ежедневный процесс:
+    - Обработка посещаемости за сегодня (REGISTERED -> PRESENT)
+    - Финансовая обработка тренировок на завтра (списание занятий/инвойсы)
+    """
+    service = DailyOperationsService(db)
+    service.process_daily_operations()
+    return {"status": "success", "message": "Daily operations processing started."} 
