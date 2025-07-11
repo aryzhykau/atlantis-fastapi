@@ -35,8 +35,8 @@ def tomorrow_training(
     db_session: Session, test_training_type_subscription: TrainingType
 ) -> RealTraining:
     training = RealTraining(
-        training_date=date.today() + timedelta(days=1),
-        start_time=time(10, 0),
+        training_date=date.today(),  # Изменено на today
+        start_time=time(12, 0),
         training_type_id=test_training_type_subscription.id,
         responsible_trainer_id=1,
     )
@@ -77,11 +77,11 @@ class TestDailyOperationsService:
         db_session.refresh(registered_student_for_today)
         assert registered_student_for_today.status == AttendanceStatus.PRESENT
 
-    def test_process_tomorrow_finances(
-        self, db_session: Session, tomorrow_training: RealTraining
+    def test_process_today_finances(
+        self, db_session: Session, today_training: RealTraining
     ):
         """
-        Тест: Финансовая обработка для завтрашней тренировки должна быть вызвана.
+        Тест: Финансовая обработка для сегодняшней тренировки должна быть вызвана.
         """
         service = DailyOperationsService(db_session)
 
@@ -89,18 +89,17 @@ class TestDailyOperationsService:
         mock_training_processing_service = MagicMock()
         service.training_processing_service = mock_training_processing_service
 
-        service._process_tomorrow_finances(date.today() + timedelta(days=1))
+        service._process_today_finances(date.today())
 
-        # Проверяем, что метод обработки был вызван для нашей завтрашней тренировки
+        # Проверяем, что метод обработки был вызван для нашей сегодняшней тренировки
         mock_training_processing_service.process_training.assert_called_once_with(
-            tomorrow_training
+            today_training
         )
 
     def test_full_daily_operations_flow(
         self,
         db_session: Session,
         today_training: RealTraining,
-        tomorrow_training: RealTraining,
         registered_student_for_today: RealTrainingStudent,
     ):
         """
@@ -121,5 +120,5 @@ class TestDailyOperationsService:
 
         # Проверяем этап 2: финансы
         mock_training_processing_service.process_training.assert_called_once_with(
-            tomorrow_training
+            today_training
         ) 

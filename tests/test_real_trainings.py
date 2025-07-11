@@ -1035,3 +1035,43 @@ def test_generate_subscription_only_training_with_subscription(db_session: Sessi
         RealTrainingStudent.real_training_id == trainings[0].id
     ).count()
     assert students_count == 1
+
+
+def test_update_attendance_cannot_set_present(
+    client, trainer_auth_headers, training_template, template_with_student, db_session
+):
+    """
+    Тест: Проверяет, что API возвращает ошибку при попытке вручную
+    установить статус посещения 'PRESENT'.
+    """
+    # Создаем реальную тренировку для теста
+    training = RealTraining(
+        training_date=date.today(),
+        start_time=time(10, 0),
+        responsible_trainer_id=training_template.responsible_trainer_id,
+        training_type_id=training_template.training_type_id,
+    )
+    db_session.add(training)
+    db_session.commit()
+    db_session.refresh(training)
+
+    # Добавляем студента на эту тренировку
+    rts = RealTrainingStudent(
+        real_training_id=training.id,
+        student_id=template_with_student.student_id,
+        status=AttendanceStatus.REGISTERED,
+    )
+    db_session.add(rts)
+    db_session.commit()
+
+    # Пытаемся обновить статус на PRESENT
+    update_data = {"status": AttendanceStatus.PRESENT.value}
+    response = client.put(
+        f"/real-trainings/{training.id}/students/{template_with_student.student_id}/attendance",
+        json=update_data,
+        headers=trainer_auth_headers,
+    )
+
+    # Проверяем, что сервер вернул ошибку валидации
+    assert response.status_code == 422
+    assert "Cannot manually set status to PRESENT" in response.text

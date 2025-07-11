@@ -20,18 +20,17 @@ class DailyOperationsService:
         """
         Выполняет две основные операции:
         1. Обработка посещаемости за СЕГОДНЯШНИЙ день (статус REGISTERED -> PRESENT).
-        2. Финансовая обработка ЗАВТРАШНИХ тренировок.
+        2. Финансовая обработка СЕГОДНЯШНИХ тренировок.
         """
         today = date.today()
-        tomorrow = today + timedelta(days=1)
 
         logger.info("Starting daily operations...")
 
         # --- Этап 1: Обработка посещаемости за сегодня ---
         self._process_today_attendance(today)
 
-        # --- Этап 2: Финансовая обработка на завтра ---
-        self._process_tomorrow_finances(tomorrow)
+        # --- Этап 2: Финансовая обработка за сегодня ---
+        self._process_today_finances(today)
 
         logger.info("Daily operations completed.")
         self.db.commit()
@@ -69,16 +68,16 @@ class DailyOperationsService:
             f"Updated {students_updated} students."
         )
 
-    def _process_tomorrow_finances(self, processing_date: date):
+    def _process_today_finances(self, processing_date: date):
         """
         Выполняет финансовую обработку (списание занятий/создание инвойсов)
         для всех тренировок на указанную дату, которые еще не были обработаны.
         """
         logger.info(f"Processing finances for date: {processing_date}...")
-        trainings_tomorrow = get_real_trainings_by_date(self.db, processing_date)
+        trainings_today = get_real_trainings_by_date(self.db, processing_date)
         processed_count = 0
 
-        for training in trainings_tomorrow:
+        for training in trainings_today:
             if training.processed_at is None:
                 logger.info(f"Processing training ID: {training.id}")
                 self.training_processing_service.process_training(training)
