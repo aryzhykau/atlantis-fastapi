@@ -28,6 +28,7 @@ class Invoice(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=True)  # Студент (опционально, для информации)
     subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)  # Абонемент (только для инвойсов типа SUBSCRIPTION)
     training_id = Column(Integer, ForeignKey("real_trainings.id"), nullable=True)  # Тренировка (только для инвойсов типа TRAINING)
+    student_subscription_id = Column(Integer, ForeignKey("student_subscriptions.id"), nullable=True) # Конкретный абонемент студента
 
     # Основные поля
     type = Column(SQLEnum(InvoiceType), nullable=False)  # Тип инвойса
@@ -52,7 +53,7 @@ class Invoice(Base):
     subscription = relationship("Subscription", backref="invoices")
     training = relationship("RealTraining", backref="invoices")
     cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
-    auto_renewal_subscription = relationship("StudentSubscription", foreign_keys="StudentSubscription.auto_renewal_invoice_id")
+    student_subscription = relationship("StudentSubscription", foreign_keys=[student_subscription_id])
 
     def __repr__(self):
         return f"<Invoice(id={self.id}, client_id={self.client_id}, type={self.type}, amount={self.amount}, status={self.status})>"
