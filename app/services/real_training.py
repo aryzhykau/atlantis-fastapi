@@ -1,9 +1,9 @@
-from datetime import datetime, date, time, timedelta, timezone
-from typing import Optional, List, Tuple
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional
+from fastapi import HTTPException
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
-from fastapi import HTTPException
-import logging
 
 from app.crud import real_training as crud
 from app.models import (
@@ -12,28 +12,28 @@ from app.models import (
     Student,
     StudentSubscription,
     Invoice,
-    InvoiceType,
     InvoiceStatus,
+    InvoiceType,
+    User,
+    UserRole
 )
+from app.models.real_training import AttendanceStatus
 from app.schemas.real_training import (
-    RealTrainingCreate,
-    RealTrainingUpdate,
-    StudentCancellationRequest,
-    TrainingCancellationRequest,
-)
-from app.schemas.real_training_student import (
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
+    StudentCancellationRequest,
+    TrainingCancellationRequest
 )
-from app.models.real_training import SAFE_CANCELLATION_HOURS, AttendanceStatus
+from app.utils.financial_processor import cancel_invoice
 
 logger = logging.getLogger(__name__)
 
+# Константы для логики отмен
+SAFE_CANCELLATION_HOURS = 12  # Часов до тренировки для безопасной отмены
 
 class RealTrainingService:
     def __init__(self, db: Session):
         self.db = db
- 
 
     def get_training(self, training_id: int) -> Optional[RealTraining]:
         """Получение тренировки по ID"""
@@ -45,14 +45,7 @@ class RealTrainingService:
         student_id: int
     ) -> Optional[RealTrainingStudent]:
         """Получение записи студента на тренировку"""
-        training = crud.get_real_training(self.db, training_id)
-        if not training:
-            return None
-        
-        for student_training in training.students:
-            if student_training.student_id == student_id:
-                return student_training
-        return None
+        return crud.get_real_training_student(self.db, training_id, student_id)
 
     def check_cancellation_time(
         self,
@@ -60,20 +53,28 @@ class RealTrainingService:
         notification_time: datetime
     ) -> bool:
         """
-        Проверка времени отмены тренировки
-        Возвращает True если отмена возможна (более 12 часов до начала)
+        Проверяет, можно ли отменить тренировку в указанное время
+        
+        Args:
+            training: Тренировка
+            notification_time: Время уведомления об отмене
+            
+        Returns:
+            True если отмена возможна, False если нет
         """
-        # Создаем timezone-aware datetime для тренировки
+        # Создаем datetime для тренировки
         training_datetime = datetime.combine(training.training_date, training.start_time)
         if training_datetime.tzinfo is None:
             training_datetime = training_datetime.replace(tzinfo=timezone.utc)
         
-        # Убеждаемся что notification_time тоже timezone-aware
+        # Приводим notification_time к UTC если нужно
         if notification_time.tzinfo is None:
             notification_time = notification_time.replace(tzinfo=timezone.utc)
         
-        hours_before = (training_datetime - notification_time).total_seconds() / 3600
-        return hours_before >= SAFE_CANCELLATION_HOURS
+        # Вычисляем разницу в часах
+        time_diff = (training_datetime - notification_time).total_seconds() / 3600
+        
+        return time_diff >= SAFE_CANCELLATION_HOURS
 
     async def cancel_student(
         self,
@@ -82,46 +83,40 @@ class RealTrainingService:
         cancellation_data: StudentCancellationRequest
     ) -> None:
         """
-        Отмена участия студента в реальной тренировке:
-        1. Проверка времени до начала (12 часов)
-        2. Если отмена безопасная (>12ч) - устанавливаем статус CANCELLED_SAFE
-        3. Если отмена небезопасная (<12ч) - устанавливаем статус CANCELLED_PENALTY + штрафы
-        4. Студент остается в тренировке с соответствующим статусом
+        Отмена участия студента в тренировке
         """
-        # Получаем тренировку
+        # Получаем тренировку и студента
         training = self.get_training(training_id)
         if not training:
             raise HTTPException(status_code=404, detail="Training not found")
 
-        # Получаем запись студента
         student_training = self.get_student_training(training_id, student_id)
         if not student_training:
-            raise HTTPException(status_code=404, detail="Студент не найден в тренировке")
+            raise HTTPException(status_code=404, detail="Student not found on this training")
 
-        # Проверяем время до начала
-        is_safe_cancellation = self.check_cancellation_time(training, cancellation_data.notification_time)
+        # Проверяем время отмены
+        can_cancel_safely = self.check_cancellation_time(
+            training, 
+            cancellation_data.cancellation_time or datetime.now(timezone.utc)
+        )
 
-        if is_safe_cancellation:
-            # Безопасная отмена - устанавливаем статус без штрафа
+        if can_cancel_safely:
+            # Безопасная отмена
             student_training.status = AttendanceStatus.CANCELLED_SAFE
-            logger.info(f"Safe cancellation for student {student_id} on training {training_id}")
+            student_training.cancellation_reason = cancellation_data.reason
+            self.db.add(student_training)
             
-            # При безопасной отмене также обрабатываем финансовые возвраты
+            # Обрабатываем возвраты при безопасной отмене
             await self._process_safe_cancellation_refunds(training, student_training)
         else:
-            # Небезопасная отмена - устанавливаем статус со штрафом
+            # Небезопасная отмена - применяем штрафы
             student_training.status = AttendanceStatus.CANCELLED_PENALTY
-            logger.warning(f"Unsafe cancellation for student {student_id} on training {training_id}")
+            student_training.cancellation_reason = cancellation_data.reason
+            self.db.add(student_training)
             
             # Применяем штрафы
             self._apply_cancellation_penalty(training, student_id)
 
-        # Сохраняем информацию об отмене
-        student_training.notification_time = cancellation_data.notification_time
-        student_training.cancelled_at = datetime.now(timezone.utc)
-        student_training.cancellation_reason = cancellation_data.reason
-
-        # Сохраняем изменения (НЕ удаляем студента!)
         self.db.commit()
 
     async def cancel_training(
@@ -130,33 +125,27 @@ class RealTrainingService:
         cancellation_data: TrainingCancellationRequest
     ) -> RealTraining:
         """
-        Полная отмена тренировки с обработкой всех студентов
-        1. Проверка тренировки
-        2. Возврат тренировок студентам
-        3. Запуск финансовых процессов
-        4. Закрытие тренировки
+        Отмена всей тренировки
         """
         # Получаем тренировку
         training = self.get_training(training_id)
         if not training:
             raise HTTPException(status_code=404, detail="Training not found")
 
-        # Проверяем что тренировка еще не отменена
-        if training.cancelled_at:
-            raise HTTPException(status_code=400, detail="Training is already cancelled")
-
-        # Отмечаем тренировку как отмененную
+        # Отменяем тренировку
         training.cancelled_at = datetime.now(timezone.utc)
         training.cancellation_reason = cancellation_data.reason
+        self.db.add(training)
+
+        # Получаем всех студентов на тренировке
+        student_trainings = (
+            self.db.query(RealTrainingStudent)
+            .filter(RealTrainingStudent.real_training_id == training_id)
+            .all()
+        )
 
         # Обрабатываем каждого студента
-        for student_training in training.students:
-            # Отмечаем отмену для студента
-            student_training.cancelled_at = datetime.now(timezone.utc)
-            student_training.cancellation_reason = cancellation_data.reason
-
-            # Если нужно запустить финансовые процессы
-            if cancellation_data.process_refunds:
+        for student_training in student_trainings:
                 await self._process_training_cancellation_refunds(training, student_training)
 
         self.db.commit()
@@ -168,7 +157,7 @@ class RealTrainingService:
         student_training: RealTrainingStudent
     ) -> None:
         """
-        Обрабатывает финансовые возвраты при отмене тренировки:
+        Обрабатывает возвраты при отмене тренировки:
         - Возвращает занятие в абонемент если тренировка уже была обработана
         - Отменяет инвойс и возвращает средства если есть
         """
@@ -181,7 +170,7 @@ class RealTrainingService:
         active_subscription = self.db.query(StudentSubscription).filter(
             and_(
                 StudentSubscription.student_id == student_id,
-                StudentSubscription.status == "active",  # Используем вычисляемое свойство
+                StudentSubscription.status == "active",
                 StudentSubscription.start_date <= training.training_date,
                 StudentSubscription.end_date >= training.training_date,
             )
@@ -207,10 +196,13 @@ class RealTrainingService:
         ).first()
 
         if invoice:
-            # Отменяем инвойс
-            invoice.status = InvoiceStatus.CANCELLED
-            invoice.cancelled_at = datetime.now(timezone.utc)
-            invoice.cancellation_reason = f"Отмена тренировки: {training.cancellation_reason}"
+            # Отменяем инвойс через FinancialProcessor
+            try:
+                cancelled_invoice = cancel_invoice(
+                    self.db,
+                    invoice.id,
+                    training.cancelled_by_id or 1  # Используем ID администратора
+                )
             
             # Возвращаем средства на баланс клиента
             student = self.db.query(Student).filter(Student.id == student_id).first()
@@ -218,11 +210,10 @@ class RealTrainingService:
                 student.client.balance += invoice.amount
                 logger.info(f"Training cancellation: Invoice {invoice.id} cancelled and "
                            f"{invoice.amount}р returned to client {student.client.id} balance")
+            except Exception as e:
+                logger.error(f"Error cancelling invoice {invoice.id}: {e}")
         else:
             logger.info(f"Training cancellation: No invoice found for student {student_id} on training {training.id}")
-            
-        # Примечание: Занятия в абонементе не возвращаем, так как они списываются 
-        # только при генерации инвойсов на завтра (вечером), а не при записи на тренировку
 
     async def _process_safe_cancellation_refunds(
         self,
@@ -244,7 +235,7 @@ class RealTrainingService:
         active_subscription = self.db.query(StudentSubscription).filter(
             and_(
                 StudentSubscription.student_id == student_id,
-                StudentSubscription.status == "active",  # Используем вычисляемое свойство
+                StudentSubscription.status == "active",
                 StudentSubscription.start_date <= training.training_date,
                 StudentSubscription.end_date >= training.training_date,
             )
@@ -270,9 +261,13 @@ class RealTrainingService:
         ).first()
 
         if invoice:
-            invoice.status = InvoiceStatus.CANCELLED
-            invoice.cancelled_at = datetime.now(timezone.utc)
-            invoice.cancellation_reason = f"Безопасная отмена участия: {student_training.cancellation_reason}"
+            # Отменяем инвойс через FinancialProcessor
+            try:
+                cancelled_invoice = cancel_invoice(
+                    self.db,
+                    invoice.id,
+                    student_training.cancelled_by_id or 1  # Используем ID администратора
+                )
             
             # Возвращаем средства на баланс клиента
             student = self.db.query(Student).filter(Student.id == student_id).first()
@@ -280,11 +275,10 @@ class RealTrainingService:
                 student.client.balance += invoice.amount
                 logger.info(f"Safe cancellation: Invoice {invoice.id} cancelled and "
                            f"{invoice.amount}р returned to client {student.client.id} balance")
+            except Exception as e:
+                logger.error(f"Error cancelling invoice {invoice.id}: {e}")
         else:
             logger.info(f"Safe cancellation: No invoice found for student {student_id} on training {training_id}")
-            
-        # Примечание: Занятия в абонементе не возвращаем, так как они списываются 
-        # только при генерации инвойсов на завтра (вечером), а не при записи на тренировку
 
     def add_student_to_training(
         self,
@@ -318,7 +312,7 @@ class RealTrainingService:
         if training.training_type.is_subscription_only:
             active_subscription = self.db.query(StudentSubscription).filter(
                 StudentSubscription.student_id == student.id,
-                StudentSubscription.status == "active",  # Используем вычисляемое свойство
+                StudentSubscription.status == "active",
                 StudentSubscription.start_date <= training.training_date,
                 StudentSubscription.end_date >= training.training_date,
             ).first()
@@ -397,26 +391,30 @@ class RealTrainingService:
             
             # Применяем штрафы
             self._apply_cancellation_penalty(db_training, student_id)
-            
             return update_data.cancellation_reason or "Поздняя отмена"
 
     def _apply_cancellation_penalty(self, training: RealTraining, student_id: int) -> None:
         """
-        Применяет штрафы за небезопасную отмену (<12 часов):
-        - Списывает занятие с абонемента если есть
-        - Создает штрафной инвойс если абонемента нет
+        Применяет штрафы за позднюю отмену:
+        - Списывает занятие с абонемента если есть активный
+        - Создает штрафной инвойс если нет абонемента
         """
+        # Ищем активный абонемент
         active_subscription = self.db.query(StudentSubscription).filter(
+            and_(
             StudentSubscription.student_id == student_id,
-            StudentSubscription.status == "active",  # Используем вычисляемое свойство
+                StudentSubscription.status == "active",
             StudentSubscription.start_date <= training.training_date,
             StudentSubscription.end_date >= training.training_date,
+                StudentSubscription.sessions_left > 0
+            )
         ).first()
 
-        if active_subscription and active_subscription.sessions_left > 0:
-            # Списываем занятие с абонемента как штраф
+        if active_subscription:
+            # Списываем занятие с абонемента
             active_subscription.sessions_left -= 1
-            logger.info(f"Late cancellation penalty: Session deducted from subscription for student {student_id}.")
+            logger.info(f"Late cancellation penalty: Session deducted from subscription for student {student_id}. "
+                       f"Sessions left: {active_subscription.sessions_left}")
         else:
             # Создаем штрафной инвойс если нет абонемента
             student = self.db.query(Student).filter(Student.id == student_id).first()

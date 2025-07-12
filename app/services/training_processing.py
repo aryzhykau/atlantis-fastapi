@@ -1,22 +1,23 @@
 import logging
 from datetime import datetime, timedelta, date, timezone
 from typing import List, Dict, Any, Optional
+from fastapi import HTTPException
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models import (
     RealTraining,
     RealTrainingStudent,
-    Student,
     StudentSubscription,
     Invoice,
-    InvoiceType,
     InvoiceStatus,
-    AttendanceStatus,
+    InvoiceType,
     User,
     UserRole
 )
-from app.services.invoice import InvoiceService
+from app.models.real_training import AttendanceStatus
+from app.schemas.invoice import InvoiceCreate
+from app.utils.financial_processor import create_and_pay_invoice
 
 logger = logging.getLogger(__name__)
 
@@ -24,23 +25,25 @@ logger = logging.getLogger(__name__)
 class TrainingProcessingService:
     def __init__(self, db: Session):
         self.db = db
-        self.invoice_service = InvoiceService(db)
 
     def validate_admin(self, user_id: int) -> None:
         """Проверка, что пользователь является админом"""
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user or user.role != UserRole.ADMIN:
-            raise ValueError("Only admins can process training invoices")
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can process trainings"
+            )
 
     def get_tomorrow_trainings(self) -> List[RealTraining]:
-        """Получение всех тренировок на завтра"""
-        tomorrow = date.today() + timedelta(days=1)
+        """Получение тренировок на завтра"""
+        tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
         return (
             self.db.query(RealTraining)
             .filter(
                 and_(
                     RealTraining.training_date == tomorrow,
-                    RealTraining.cancelled_at.is_(None)  # Исключаем отмененные тренировки
+                    RealTraining.processed_at.is_(None)
                 )
             )
             .all()
@@ -53,12 +56,13 @@ class TrainingProcessingService:
             .filter(
                 and_(
                     StudentSubscription.student_id == student_id,
+                    StudentSubscription.status == "active",
+                    StudentSubscription.sessions_left > 0,
                     StudentSubscription.start_date <= training_date,
                     StudentSubscription.end_date >= training_date,
-                    StudentSubscription.sessions_left > 0,
-                    # Проверяем, что абонемент не заморожен на дату тренировки
                     or_(
                         StudentSubscription.freeze_start_date.is_(None),
+                        StudentSubscription.freeze_end_date.is_(None),
                         and_(
                             StudentSubscription.freeze_start_date.isnot(None),
                             StudentSubscription.freeze_end_date.isnot(None),
@@ -137,14 +141,19 @@ class TrainingProcessingService:
                 training_cost = training.training_type.price if training.training_type.is_subscription_only else 0
                 
                 if training_cost > 0:
-                    # Создаем инвойс за тренировку
-                    invoice = self.invoice_service.create_training_invoice(
+                    # Создаем инвойс за тренировку через FinancialProcessor
+                    invoice_data = InvoiceCreate(
                         client_id=student.client_id,
                         student_id=student.id,
                         training_id=training.id,
+                        type=InvoiceType.TRAINING,
                         amount=training_cost,
-                        description=f"Тренировка: {training.training_type.name} от {training.training_date.strftime('%d.%m.%Y')} {training.start_time.strftime('%H:%M')}"
+                        description=f"Тренировка: {training.training_type.name} от {training.training_date.strftime('%d.%m.%Y')} {training.start_time.strftime('%H:%M')}",
+                        status=InvoiceStatus.UNPAID,  # FinancialProcessor сам определит статус на основе баланса
+                        is_auto_renewal=False
                     )
+                    
+                    invoice = create_and_pay_invoice(self.db, invoice_data, auto_pay=True)
                     
                     result["action"] = "create_invoice"
                     result["details"] = f"Создан инвойс на сумму {training_cost}р"
@@ -216,7 +225,7 @@ class TrainingProcessingService:
         self.validate_admin(admin_id)
 
         overall_result = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "admin_id": admin_id,
             "trainings_processed": 0,
             "total_students_processed": 0,

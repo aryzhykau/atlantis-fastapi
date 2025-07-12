@@ -1,354 +1,187 @@
-from datetime import datetime, timedelta
-from typing import Optional, List, Literal, Tuple
-from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import desc, and_, func, or_
+from datetime import datetime, timezone
+from typing import List, Optional
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
 
-from app.models import Payment, PaymentHistory, User, Invoice
-from app.models.user import User as User2
-from app.models.payment_history import OperationType
-from app.schemas.payment import PaymentCreate, PaymentHistoryFilterRequest
+from app.models import Payment
+from app.schemas.payment import PaymentCreate, PaymentUpdate
 
+
+# =============================================================================
+# ПРОСТЫЕ CRUD ОПЕРАЦИИ С ПЛАТЕЖАМИ
+# =============================================================================
 
 def get_payment(db: Session, payment_id: int) -> Optional[Payment]:
-    """Получение платежа по ID"""
+    """
+    Получение платежа по ID
+    """
     return db.query(Payment).filter(Payment.id == payment_id).first()
+
+
+def get_payments(
+    db: Session,
+    *,
+    client_id: Optional[int] = None,
+    registered_by_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> List[Payment]:
+    """
+    Получение списка платежей с фильтрами
+    """
+    query = db.query(Payment)
+    
+    if client_id:
+        query = query.filter(Payment.client_id == client_id)
+    if registered_by_id:
+        query = query.filter(Payment.registered_by_id == registered_by_id)
+        
+    return query.order_by(desc(Payment.payment_date)).offset(skip).limit(limit).all()
 
 
 def get_client_payments(
     db: Session,
     client_id: int,
-    cancelled_status: Literal["all", "cancelled", "not_cancelled"] = "all",
+    *,
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
 ) -> List[Payment]:
     """
-    Получение списка платежей клиента
-    
-    Args:
-        db: Сессия базы данных
-        client_id: ID клиента
-        cancelled_status: Статус отмены платежей для фильтрации:
-            - "all": все платежи (по умолчанию)
-            - "cancelled": только отмененные платежи
-            - "not_cancelled": только неотмененные платежи
-        skip: Количество записей для пропуска (для пагинации)
-        limit: Максимальное количество возвращаемых записей
-        
-    Returns:
-        Список платежей, соответствующих заданным критериям
+    Получение платежей клиента
     """
-    query = db.query(Payment).filter(Payment.client_id == client_id)
-    
-    # Применяем фильтр по статусу отмены
-    if cancelled_status == "cancelled":
-        query = query.filter(Payment.cancelled_at.isnot(None))
-    elif cancelled_status == "not_cancelled":
-        query = query.filter(Payment.cancelled_at.is_(None))
-    
-    # Сортировка, пагинация и выполнение запроса
-    return (
-        query
-        .order_by(desc(Payment.payment_date))
-        .offset(skip)
-        .limit(limit)
-        .all()
+    return get_payments(db, client_id=client_id, skip=skip, limit=limit)
+
+
+def create_payment(db: Session, payment_data: PaymentCreate) -> Payment:
+    """
+    Создание нового платежа
+    """
+    db_payment = Payment(
+        client_id=payment_data.client_id,
+        amount=payment_data.amount,
+        payment_method=payment_data.payment_method,
+        description=payment_data.description,
+        payment_date=payment_data.payment_date or datetime.now(timezone.utc),
+        created_by_id=payment_data.created_by_id,
     )
+    db.add(db_payment)
+    # НЕ делаем commit здесь - это делает сервис
+    db.flush()  # Получаем ID, но не коммитим
+    db.refresh(db_payment)
+    return db_payment
 
 
-def create_payment(
+def update_payment(
     db: Session,
-    client_id: int,
-    amount: float,
-    registered_by_id: int,
-    description: Optional[str] = None
-) -> Payment:
-    """Создание нового платежа"""
-    payment = Payment(
-        client_id=client_id,
-        amount=amount,
-        description=description,
-        registered_by_id=registered_by_id,
-        payment_date=datetime.utcnow()
-    )
-    db.add(payment)
-    db.commit()
+    payment_id: int,
+    update_data: PaymentUpdate,
+) -> Optional[Payment]:
+    """
+    Обновление платежа
+    """
+    payment = get_payment(db, payment_id)
+    if not payment:
+        return None
+
+    update_dict = update_data.model_dump(exclude_unset=True)
+    for field, value in update_dict.items():
+        setattr(payment, field, value)
+
+    # НЕ делаем commit здесь - это делает сервис
+    db.flush()  # Обновляем объект, но не коммитим
     db.refresh(payment)
     return payment
 
 
-def get_payments(db: Session, skip: int = 0, limit: int = 100) -> List[Payment]:
-    return db.query(Payment).offset(skip).limit(limit).all()
-
-
-def get_payments_with_filters(
+def cancel_payment(
     db: Session,
-    user_id: int,
-    registered_by_me: bool = False,
-    period: str = "week"
+    payment_id: int,
+    cancelled_by_id: Optional[int] = None,
+) -> Optional[Payment]:
+    """
+    Отмена платежа
+    """
+    payment = get_payment(db, payment_id)
+    if not payment:
+        return None
+
+    if payment.cancelled_at:
+        return payment  # Уже отменён
+
+    payment.cancelled_at = datetime.now(timezone.utc)
+    payment.cancelled_by_id = cancelled_by_id
+
+    # НЕ делаем commit здесь - это делает сервис
+    db.flush()  # Обновляем объект, но не коммитим
+    db.refresh(payment)
+    return payment
+
+
+def get_payment_count(
+    db: Session,
+    *,
+    client_id: Optional[int] = None,
+    registered_by_id: Optional[int] = None,
+) -> int:
+    """
+    Получение количества платежей
+    """
+    query = db.query(Payment)
+    
+    if client_id:
+        query = query.filter(Payment.client_id == client_id)
+    if registered_by_id:
+        query = query.filter(Payment.registered_by_id == registered_by_id)
+        
+    return query.count()
+
+
+def get_active_payments(
+    db: Session,
+    *,
+    client_id: Optional[int] = None,
+    registered_by_id: Optional[int] = None,
 ) -> List[Payment]:
     """
-    Получение платежей с фильтрацией по регистрировавшему и периоду
-    
-    Args:
-        db: Database session
-        user_id: ID пользователя (тренера/админа)
-        registered_by_me: Если True, возвращает только платежи зарегистрированные этим пользователем
-        period: Период для фильтрации (week/month/3months)
+    Получение активных (неотменённых) платежей
     """
-    # Вычисляем дату начала периода
-    now = datetime.utcnow()
-    if period == "week":
-        start_date = now - timedelta(days=7)
-    elif period == "2weeks":
-        start_date = now - timedelta(days=14)
-    else:
-        start_date = now - timedelta(days=7)  # По умолчанию неделя
+    query = db.query(Payment).filter(Payment.cancelled_at.is_(None))
     
-    # Базовый запрос
-    query = db.query(Payment).filter(
-        Payment.payment_date >= start_date
-    )
-    
-    # Фильтрация по регистрировавшему
-    if registered_by_me:
-        query = query.filter(Payment.registered_by_id == user_id)
-    
-    # Исключаем отменённые платежи
-    query = query.filter(Payment.cancelled_at.is_(None))
-    
-    # Жадная загрузка связанных объектов
-    query = query.options(
-        selectinload(Payment.client),
-        selectinload(Payment.registered_by)
-    )
-    
-    # Сортировка по дате создания (новые сначала)
+    if client_id:
+        query = query.filter(Payment.client_id == client_id)
+    if registered_by_id:
+        query = query.filter(Payment.registered_by_id == registered_by_id)
+        
     return query.order_by(desc(Payment.payment_date)).all()
 
 
-def get_payments_with_filters_extended(
+def get_cancelled_payments(
     db: Session,
-    user_id: int,
-    registered_by_me: bool = False,
-    period: str = "week"
-) -> List[dict]:
-    """
-    Получение платежей с фильтрацией по регистрировавшему и периоду (с расширенными данными)
-    
-    Args:
-        db: Database session
-        user_id: ID пользователя (тренера/админа)
-        registered_by_me: Если True, возвращает только платежи зарегистрированные этим пользователем
-        period: Период для фильтрации (week/month/3months)
-    """
-    # Вычисляем дату начала периода
-    now = datetime.utcnow()
-    if period == "week":
-        start_date = now - timedelta(days=7)
-    elif period == "2weeks":
-        start_date = now - timedelta(days=14)
-    else:
-        start_date = now - timedelta(days=7)  # По умолчанию неделя
-    
-    # Базовый запрос
-    query = db.query(Payment).filter(
-        Payment.payment_date >= start_date
-    )
-    
-    # Фильтрация по регистрировавшему
-    if registered_by_me:
-        query = query.filter(Payment.registered_by_id == user_id)
-    
-    # Исключаем отменённые платежи
-    query = query.filter(Payment.cancelled_at.is_(None))
-    
-    # Жадная загрузка связанных объектов
-    query = query.options(
-        selectinload(Payment.client),
-        selectinload(Payment.registered_by)
-    )
-    
-    # Сортировка по дате создания (новые сначала)
-    payments = query.order_by(desc(Payment.payment_date)).all()
-    
-    # Преобразуем в словари с расширенными данными
-    extended_payments = []
-    for payment in payments:
-        payment_dict = {
-            'id': payment.id,
-            'client_id': payment.client_id,
-            'amount': payment.amount,
-            'payment_date': payment.payment_date,
-            'description': payment.description,
-            'registered_by_id': payment.registered_by_id,
-            'cancelled_at': payment.cancelled_at,
-            'cancelled_by_id': payment.cancelled_by_id,
-            # Связанные данные
-            'client_first_name': payment.client.first_name if payment.client else None,
-            'client_last_name': payment.client.last_name if payment.client else None,
-            'registered_by_first_name': payment.registered_by.first_name if payment.registered_by else None,
-            'registered_by_last_name': payment.registered_by.last_name if payment.registered_by else None,
-        }
-        extended_payments.append(payment_dict)
-    
-    return extended_payments
-
-
-def get_payment_history_filtered(
-    db: Session,
-    filters: PaymentHistoryFilterRequest
-) -> Tuple[List[dict], int]:
-    """
-    Получение истории платежей с фильтрами и пагинацией (через relationships)
-    """
-    query = db.query(PaymentHistory)
-
-    # Фильтры
-    if filters.operation_type:
-        query = query.filter(PaymentHistory.operation_type == filters.operation_type)
-    if filters.client_id:
-        query = query.filter(PaymentHistory.client_id == filters.client_id)
-    if filters.created_by_id:
-        query = query.filter(PaymentHistory.created_by_id == filters.created_by_id)
-    if filters.date_from:
-        query = query.filter(PaymentHistory.created_at >= filters.date_from)
-    if filters.date_to:
-        query = query.filter(PaymentHistory.created_at <= filters.date_to)
-    if filters.amount_min is not None:
-        query = query.filter(PaymentHistory.amount >= filters.amount_min)
-    if filters.amount_max is not None:
-        query = query.filter(PaymentHistory.amount <= filters.amount_max)
-    if filters.description_search:
-        search_term = f"%{filters.description_search}%"
-        query = query.filter(
-            or_(
-                PaymentHistory.description.ilike(search_term),
-                PaymentHistory.payment.has(Payment.description.ilike(search_term))
-            )
-        )
-
-    total_count = query.count()
-
-    # Сортировка и пагинация
-    query = query.order_by(desc(PaymentHistory.created_at))
-    query = query.offset(filters.skip).limit(filters.limit)
-
-    # Жадная загрузка связанных объектов
-    query = query.options(
-        selectinload(PaymentHistory.client),
-        selectinload(PaymentHistory.created_by),
-        selectinload(PaymentHistory.payment),
-        selectinload(PaymentHistory.invoice)
-    )
-
-    results = query.all()
-    history_items = []
-    for ph in results:
-        item = {
-            'id': ph.id,
-            'client_id': ph.client_id,
-            'payment_id': ph.payment_id,
-            'invoice_id': ph.invoice_id,
-            'operation_type': ph.operation_type,
-            'amount': ph.amount if ph.amount is not None else 0.0,
-            'balance_before': ph.balance_before if ph.balance_before is not None else 0.0,
-            'balance_after': ph.balance_after if ph.balance_after is not None else 0.0,
-            'description': ph.description,
-            'created_at': ph.created_at,
-            'created_by_id': ph.created_by_id,
-            # Связанные данные
-            'client_first_name': ph.client.first_name if ph.client else None,
-            'client_last_name': ph.client.last_name if ph.client else None,
-            'created_by_first_name': ph.created_by.first_name if ph.created_by else None,
-            'created_by_last_name': ph.created_by.last_name if ph.created_by else None,
-            'payment_description': ph.payment.description if ph.payment else None,
-        }
-        history_items.append(item)
-    return history_items, total_count
-
-
-def get_trainer_payments_filtered(
-    db: Session,
-    trainer_id: int,
-    period: str = "all",
+    *,
     client_id: Optional[int] = None,
-    amount_min: Optional[float] = None,
-    amount_max: Optional[float] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    description_search: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 50
-) -> Tuple[List[Payment], int]:
+    registered_by_id: Optional[int] = None,
+) -> List[Payment]:
     """
-    Получение платежей тренера с фильтрами и пагинацией
-    
-    Args:
-        db: Сессия базы данных
-        trainer_id: ID тренера
-        period: Период фильтрации (week/month/3months/all)
-        client_id: ID клиента для фильтрации
-        amount_min: Минимальная сумма
-        amount_max: Максимальная сумма
-        date_from: Дата начала периода (YYYY-MM-DD)
-        date_to: Дата окончания периода (YYYY-MM-DD)
-        description_search: Поиск по описанию
-        skip: Смещение для пагинации
-        limit: Лимит записей
-        
-    Returns:
-        Кортеж (список платежей, общее количество)
+    Получение отменённых платежей
     """
-    query = db.query(Payment).filter(Payment.registered_by_id == trainer_id)
+    query = db.query(Payment).filter(Payment.cancelled_at.isnot(None))
     
-    # Фильтр по периоду
-    if period != "all":
-        now = datetime.utcnow()
-        if period == "week":
-            start_date = now - timedelta(days=7)
-        elif period == "2weeks":
-            start_date = now - timedelta(days=14)
-        else:
-            start_date = now - timedelta(days=7)  # По умолчанию неделя
-        
-        query = query.filter(Payment.payment_date >= start_date)
-    
-    # Фильтр по клиенту
     if client_id:
         query = query.filter(Payment.client_id == client_id)
-    
-    # Фильтр по сумме
-    if amount_min is not None:
-        query = query.filter(Payment.amount >= amount_min)
-    if amount_max is not None:
-        query = query.filter(Payment.amount <= amount_max)
-    
-    # Фильтр по датам
-    if date_from:
-        query = query.filter(Payment.payment_date >= date_from)
-    if date_to:
-        query = query.filter(Payment.payment_date <= date_to)
-    
-    # Фильтр по описанию
-    if description_search:
-        search_term = f"%{description_search}%"
-        query = query.filter(Payment.description.ilike(search_term))
-    
-    # Исключаем отменённые платежи
-    query = query.filter(Payment.cancelled_at.is_(None))
-    
-    # Получаем общее количество
-    total_count = query.count()
-    
-    # Сортировка и пагинация
-    query = query.order_by(desc(Payment.payment_date))
-    query = query.offset(skip).limit(limit)
-    
-    # Жадная загрузка связанных объектов
-    query = query.options(
-        selectinload(Payment.client),
-        selectinload(Payment.registered_by)
-    )
-    
-    payments = query.all()
-    return payments, total_count
+    if registered_by_id:
+        query = query.filter(Payment.registered_by_id == registered_by_id)
+        
+    return query.order_by(desc(Payment.cancelled_at)).all()
+
+
+def delete_payment(db: Session, payment_id: int) -> bool:
+    """
+    Удаление платежа (только для отменённых)
+    """
+    payment = get_payment(db, payment_id)
+    if not payment or not payment.cancelled_at:
+        return False
+
+    db.delete(payment)
+    # НЕ делаем commit здесь - это делает сервис
+    return True

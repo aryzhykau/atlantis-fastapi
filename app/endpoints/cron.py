@@ -1,49 +1,110 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.dependencies import get_db
-from app.core.security import verify_api_key
+from app.core.security import verify_api_key, verify_jwt_token
 from app.models import User, UserRole
 from app.services.subscription import SubscriptionService
 from app.services.training_processing import TrainingProcessingService
 from app.services.daily_operations import DailyOperationsService
+from app.services.invoice import InvoiceService
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cron", tags=["cron"])
 
-@router.post("/check-auto-renewals", dependencies=[Depends(verify_api_key)])
-def check_auto_renewals(db: Session = Depends(get_db)):
-    """
-    Эндпоинт для проверки и обработки автопродлений абонементов.
-    Защищен API ключом (передается в заголовке X-API-Key).
-    Может вызываться внешним сервисом по расписанию (например, Google Apps Script).
-    """
+@router.post("/auto-mark-attendance")
+def auto_mark_attendance_endpoint(
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """Автоматическая отметка посещаемости"""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
     try:
-        # Получаем системного администратора
-        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
-        if not admin:
-            return {
-                "success": False,
-                "error": "No admin user found in the system",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-        # Запускаем проверку автопродлений
-        service = SubscriptionService(db)
-        renewed_subscriptions = service.process_auto_renewals(admin.id)
+        training_processing_service = TrainingProcessingService(db)
+        result = training_processing_service.auto_mark_attendance(current_user["id"])
         
         return {
-            "success": True,
-            "renewals_processed": len(renewed_subscriptions),
-            "timestamp": datetime.utcnow().isoformat()
+            "message": "Auto attendance marking completed",
+            "result": result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
-        
     except Exception as e:
+        logger.error(f"Error in auto mark attendance: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/process-auto-renewals")
+def process_auto_renewals_endpoint(
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """Обработка автопродления абонементов"""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        subscription_service = SubscriptionService(db)
+        renewed_subscriptions = subscription_service.process_auto_renewals()
+        
         return {
-            "success": False,
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "message": "Auto renewals processed",
+            "renewed_count": len(renewed_subscriptions),
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
+    except Exception as e:
+        logger.error(f"Error in auto renewals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-unfreeze-subscriptions")
+def auto_unfreeze_subscriptions_endpoint(
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """Автоматическая разморозка абонементов"""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        subscription_service = SubscriptionService(db)
+        unfrozen_subscriptions = subscription_service.auto_unfreeze_expired_subscriptions()
+        
+        return {
+            "message": "Auto unfreeze completed",
+            "unfrozen_count": len(unfrozen_subscriptions),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in auto unfreeze: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/process-invoices")
+def process_invoices_endpoint(
+    current_user=Depends(verify_jwt_token),
+    db: Session = Depends(get_db),
+):
+    """Обработка инвойсов"""
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        invoice_service = InvoiceService(db)
+        result = invoice_service.process_invoices(current_user["id"])
+        
+        return {
+            "message": "Invoice processing completed",
+            "result": result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in invoice processing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/generate-invoices", dependencies=[Depends(verify_api_key)])

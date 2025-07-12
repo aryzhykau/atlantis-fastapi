@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 import logging
+from datetime import timezone
 
 from app.models import (
     RealTraining,
@@ -393,3 +394,26 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
         db.commit()
     
     return created_count, created_trainings_details 
+
+
+def mark_attendance(
+    db: Session,
+    training_id: int,
+    student_id: int,
+    attendance_status: str,
+    marked_by_id: int
+) -> Optional[RealTrainingStudent]:
+    """
+    Отметка посещаемости студента на тренировке
+    """
+    training_student = get_real_training_student(db, training_id, student_id)
+    if not training_student:
+        return None
+
+    training_student.attendance_status = attendance_status
+    training_student.attendance_marked_by_id = marked_by_id
+    training_student.attendance_marked_at = datetime.now(timezone.utc)
+    # НЕ делаем commit здесь - это делает сервис
+    db.flush()  # Обновляем объект, но не коммитим
+    db.refresh(training_student)
+    return training_student 

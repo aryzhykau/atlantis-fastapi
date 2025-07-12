@@ -5,6 +5,7 @@ from app.models.subscription import StudentSubscription
 from app.schemas.student import StudentCreate, StudentUpdate
 from datetime import datetime
 from sqlalchemy import and_
+from typing import Optional
 
 
 # Получить студента по ID
@@ -164,5 +165,24 @@ def update_student_status(db: Session, student_id: int, is_active: bool) -> Stud
     except Exception as e:
         db.rollback()
         raise e
+
+
+def update_student_active_subscription(
+    db: Session,
+    student_id: int,
+    active_subscription_id: Optional[int]
+) -> Optional[Student]:
+    """
+    Обновление активного абонемента студента
+    """
+    student = get_student_by_id(db, student_id)
+    if not student:
+        return None
+
+    student.active_subscription_id = active_subscription_id
+    # НЕ делаем commit здесь - это делает сервис
+    db.flush()  # Обновляем объект, но не коммитим
+    db.refresh(student)
+    return student
 
 
