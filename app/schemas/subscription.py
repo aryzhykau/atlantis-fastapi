@@ -43,12 +43,19 @@ class StudentSubscriptionBase(BaseModel):
 
 class StudentSubscriptionCreate(StudentSubscriptionBase):
     """Схема для создания подписки студента"""
-    pass
+    start_date: Optional[datetime] = Field(None, description="Дата начала подписки")
+    end_date: Optional[datetime] = Field(None, description="Дата окончания подписки")
+    sessions_left: Optional[int] = Field(None, description="Оставшиеся тренировки")
+    transferred_sessions: Optional[int] = Field(0, description="Перенесенные тренировки")
+    freeze_start_date: Optional[datetime] = Field(None, description="Начало периода заморозки")
+    freeze_end_date: Optional[datetime] = Field(None, description="Конец периода заморозки")
 
 
 class StudentSubscriptionUpdate(BaseModel):
     """Схема для обновления подписки студента"""
-    is_auto_renew: bool = Field(..., description="Включить/выключить автопродление")
+    is_auto_renew: Optional[bool] = Field(None, description="Включить/выключить автопродление")
+    sessions_left: Optional[int] = Field(None, description="Оставшиеся тренировки")
+    transferred_sessions: Optional[int] = Field(None, description="Перенесенные тренировки")
 
 
 class StudentSubscriptionResponse(StudentSubscriptionBase):
@@ -64,6 +71,12 @@ class StudentSubscriptionResponse(StudentSubscriptionBase):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class SubscriptionFreeze(BaseModel):
+    """Схема для заморозки подписки"""
+    freeze_start_date: datetime = Field(..., description="Дата начала заморозки")
+    freeze_duration_days: int = Field(..., description="Длительность заморозки в днях")
 
 
 class SubscriptionList(BaseModel):

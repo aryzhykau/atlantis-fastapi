@@ -126,6 +126,7 @@ def create_invoice(db: Session, invoice_data: InvoiceCreate) -> Invoice:
         student_id=invoice_data.student_id,
         training_id=invoice_data.training_id,
         subscription_id=invoice_data.subscription_id,
+        student_subscription_id=invoice_data.student_subscription_id,
         type=invoice_data.type,
         amount=invoice_data.amount,
         description=invoice_data.description,

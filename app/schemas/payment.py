@@ -15,6 +15,18 @@ class PaymentCreate(PaymentBase):
     client_id: int = Field(..., description="ID клиента")
 
 
+class PaymentUpdate(BaseModel):
+    """Схема для обновления платежа"""
+    amount: Optional[float] = Field(None, description="Сумма платежа")
+    description: Optional[str] = Field(None, description="Описание платежа")
+
+
+class PaymentUpdate(BaseModel):
+    """Схема для обновления платежа"""
+    amount: Optional[float] = Field(None, description="Сумма платежа")
+    description: Optional[str] = Field(None, description="Описание платежа")
+
+
 class PaymentResponse(PaymentBase):
     """Схема ответа с информацией о платеже"""
     id: int

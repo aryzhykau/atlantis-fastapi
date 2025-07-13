@@ -15,6 +15,15 @@ class InvoiceBase(BaseModel):
     is_auto_renewal: bool = Field(False, description="Создан ли для автопродления")
 
 
+class InvoiceCreate(InvoiceBase):
+    """Общая схема для создания инвойса"""
+    subscription_id: Optional[int] = Field(None, description="ID абонемента")
+    training_id: Optional[int] = Field(None, description="ID тренировки")
+    type: InvoiceType = Field(..., description="Тип инвойса")
+    status: InvoiceStatus = Field(InvoiceStatus.UNPAID, description="Статус инвойса")
+    student_subscription_id: Optional[int] = Field(None, description="ID подписки студента")
+
+
 class SubscriptionInvoiceCreate(InvoiceBase):
     """Схема для создания инвойса для абонемента"""
     subscription_id: int = Field(..., description="ID абонемента")
@@ -43,6 +52,16 @@ class InvoiceResponse(BaseModel):
     is_auto_renewal: bool
 
     model_config = {"from_attributes": True}
+
+
+class InvoiceUpdate(BaseModel):
+    """Схема для обновления инвойса"""
+    amount: Optional[float] = Field(None, description="Сумма")
+    description: Optional[str] = Field(None, description="Описание/причина")
+    status: Optional[InvoiceStatus] = Field(None, description="Статус инвойса")
+    paid_at: Optional[datetime] = Field(None, description="Дата оплаты")
+    cancelled_at: Optional[datetime] = Field(None, description="Дата отмены")
+    cancelled_by_id: Optional[int] = Field(None, description="ID пользователя, отменившего инвойс")
 
 
 class InvoiceList(BaseModel):

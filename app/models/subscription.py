@@ -48,7 +48,11 @@ class StudentSubscription(Base):
     @hybrid_property
     def status(self):
         """Вычисляет статус абонемента с учетом временных зон"""
-        current_time = datetime.now(tz=self.end_date.tzinfo)
+        current_time = datetime.now()  # Используем naive datetime
+        
+        # Проверяем, что подписка ещё не началась (для автопродления)
+        if current_time < self.start_date:
+            return "pending"
         
         if (self.freeze_start_date and self.freeze_end_date and
             current_time >= self.freeze_start_date and
@@ -63,15 +67,20 @@ class StudentSubscription(Base):
     @status.expression
     def status(cls):
         """SQL expression для status с учетом временных зон"""
+        # Используем func.datetime('now') для совместимости с SQLite
+        # В PostgreSQL это тоже работает
+        now = func.datetime('now')
+        
         return case(
+            (now < cls.start_date, "pending"),
             (
                 (cls.freeze_start_date.isnot(None)) &
                 (cls.freeze_end_date.isnot(None)) &
-                (func.now() >= cls.freeze_start_date) &
-                (func.now() <= cls.freeze_end_date),
+                (now >= cls.freeze_start_date) &
+                (now <= cls.freeze_end_date),
                 "frozen"
             ),
-            (func.now() > cls.end_date, "expired"),
+            (now > cls.end_date, "expired"),
             else_="active"
         )
 

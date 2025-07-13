@@ -13,17 +13,13 @@ from app.schemas.subscription import (
     SubscriptionList,
     StudentSubscriptionCreate,
     StudentSubscriptionResponse,
-    StudentSubscriptionUpdate
+    StudentSubscriptionUpdate,
+    SubscriptionFreeze
 )
-from app.crud.subscription import (
-    create_subscription,
-    get_subscriptions,
-    get_subscription_by_id,
-    update_subscription,
-)
+
 from app.schemas.user import UserRole
 from app.services.subscription import SubscriptionService
-from app.core.security import verify_api_key
+
 
 
 logger = logging.getLogger(__name__)
@@ -40,8 +36,8 @@ def create_subscription_endpoint(
 ):
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Forbidden")
-    new_subscription = create_subscription(db, subscription_data)
-    return new_subscription
+    service = SubscriptionService(db)
+    return service.create_subscription(subscription_data)
 
 
 # Получение списка всех абонементов
@@ -50,7 +46,8 @@ def get_subscriptions_endpoint(
         current_user=Depends(verify_jwt_token),
         db: Session = Depends(get_db),
 ):
-    subscriptions = get_subscriptions(db)
+    service = SubscriptionService(db)
+    subscriptions = service.get_all_subscriptions()
     return SubscriptionList(items=subscriptions, total=len(subscriptions))
 
 
@@ -61,7 +58,8 @@ def get_subscription_endpoint(
         current_user=Depends(verify_jwt_token),
         db: Session = Depends(get_db),
 ):
-    subscription = get_subscription_by_id(db, subscription_id)
+    service = SubscriptionService(db)
+    subscription = service.get_subscription(subscription_id)
     if not subscription:
         raise HTTPException(status_code=404, detail="Subscription not found")
     return subscription
@@ -82,11 +80,11 @@ def update_subscription_endpoint(
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Only admins can update subscriptions")
     
-    subscription = get_subscription_by_id(db, subscription_id)
-    if not subscription:
+    service = SubscriptionService(db)
+    updated_subscription = service.update_subscription(subscription_id, subscription_data)
+    if not updated_subscription:
         raise HTTPException(status_code=404, detail="Subscription not found")
     
-    updated_subscription = update_subscription(db, subscription_id, subscription_data)
     return updated_subscription
 
 
@@ -146,8 +144,7 @@ def update_auto_renewal(
 @router.post("/student/{subscription_id}/freeze", response_model=StudentSubscriptionResponse)
 def freeze_subscription(
     subscription_id: int,
-    freeze_start_date: datetime,
-    freeze_duration_days: int,
+    freeze_data: SubscriptionFreeze,
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
@@ -158,8 +155,8 @@ def freeze_subscription(
     service = SubscriptionService(db)
     return service.freeze_subscription(
         student_subscription_id=subscription_id,
-        freeze_start_date=freeze_start_date,
-        freeze_duration_days=freeze_duration_days,
+        freeze_start_date=freeze_data.freeze_start_date,
+        freeze_duration_days=freeze_data.freeze_duration_days,
         updated_by_id=current_user["id"]
     )
 
@@ -181,28 +178,7 @@ def unfreeze_subscription(
     )
 
 
-@router.post("/auto-unfreeze", response_model=List[StudentSubscriptionResponse], dependencies=[Depends(verify_api_key)])
-def auto_unfreeze_expired_subscriptions(
-    db: Session = Depends(get_db)
-):
-    """
-    Автоматическая разморозка всех абонементов с истёкшей заморозкой.
-    Защищен API ключом (передается в заголовке X-API-Key).
-    Может вызываться внешним сервисом по расписанию (например, cron).
-    """
-    # Получаем системного администратора
-    from app.models.user import User, UserRole
-    admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
-    if not admin:
-        raise HTTPException(
-            status_code=500,
-            detail="No admin user found in the system"
-        )
-    
-    service = SubscriptionService(db)
-    return service.auto_unfreeze_expired_subscriptions(
-        admin_id=admin.id
-    )
+
 
 
 

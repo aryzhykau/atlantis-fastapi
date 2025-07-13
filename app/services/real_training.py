@@ -203,13 +203,13 @@ class RealTrainingService:
                     invoice.id,
                     training.cancelled_by_id or 1  # Используем ID администратора
                 )
-            
-            # Возвращаем средства на баланс клиента
-            student = self.db.query(Student).filter(Student.id == student_id).first()
-            if student and student.client:
-                student.client.balance += invoice.amount
-                logger.info(f"Training cancellation: Invoice {invoice.id} cancelled and "
-                           f"{invoice.amount}р returned to client {student.client.id} balance")
+                
+                # Возвращаем средства на баланс клиента
+                student = self.db.query(Student).filter(Student.id == student_id).first()
+                if student and student.client:
+                    student.client.balance += invoice.amount
+                    logger.info(f"Training cancellation: Invoice {invoice.id} cancelled and "
+                               f"{invoice.amount}р returned to client {student.client.id} balance")
             except Exception as e:
                 logger.error(f"Error cancelling invoice {invoice.id}: {e}")
         else:
@@ -268,13 +268,13 @@ class RealTrainingService:
                     invoice.id,
                     student_training.cancelled_by_id or 1  # Используем ID администратора
                 )
-            
-            # Возвращаем средства на баланс клиента
-            student = self.db.query(Student).filter(Student.id == student_id).first()
-            if student and student.client:
-                student.client.balance += invoice.amount
-                logger.info(f"Safe cancellation: Invoice {invoice.id} cancelled and "
-                           f"{invoice.amount}р returned to client {student.client.id} balance")
+                
+                # Возвращаем средства на баланс клиента
+                student = self.db.query(Student).filter(Student.id == student_id).first()
+                if student and student.client:
+                    student.client.balance += invoice.amount
+                    logger.info(f"Safe cancellation: Invoice {invoice.id} cancelled and "
+                               f"{invoice.amount}р returned to client {student.client.id} balance")
             except Exception as e:
                 logger.error(f"Error cancelling invoice {invoice.id}: {e}")
         else:

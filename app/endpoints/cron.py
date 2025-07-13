@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from app.dependencies import get_db
-from app.core.security import verify_api_key, verify_jwt_token
+from app.core.security import verify_api_key
+from app.auth.jwt_handler import verify_jwt_token
 from app.models import User, UserRole
 from app.services.subscription import SubscriptionService
 from app.services.training_processing import TrainingProcessingService
@@ -38,15 +39,13 @@ def auto_mark_attendance_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/process-auto-renewals")
-def process_auto_renewals_endpoint(
-    current_user=Depends(verify_jwt_token),
-    db: Session = Depends(get_db),
-):
-    """Обработка автопродления абонементов"""
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
+@router.post("/auto-renewal", dependencies=[Depends(verify_api_key)])
+def auto_renewal_subscriptions_endpoint(db: Session = Depends(get_db)):
+    """
+    Автоматическое продление всех абонементов с автопродлением, которые заканчиваются сегодня.
+    Защищен API ключом (передается в заголовке X-API-Key).
+    Может вызываться внешним сервисом по расписанию (например, cron).
+    """
     try:
         subscription_service = SubscriptionService(db)
         renewed_subscriptions = subscription_service.process_auto_renewals()
@@ -61,15 +60,13 @@ def process_auto_renewals_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/auto-unfreeze-subscriptions")
-def auto_unfreeze_subscriptions_endpoint(
-    current_user=Depends(verify_jwt_token),
-    db: Session = Depends(get_db),
-):
-    """Автоматическая разморозка абонементов"""
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
+@router.post("/auto-unfreeze", dependencies=[Depends(verify_api_key)])
+def auto_unfreeze_subscriptions_endpoint(db: Session = Depends(get_db)):
+    """
+    Автоматическая разморозка всех абонементов с истёкшей заморозкой.
+    Защищен API ключом (передается в заголовке X-API-Key).
+    Может вызываться внешним сервисом по расписанию (например, cron).
+    """
     try:
         subscription_service = SubscriptionService(db)
         unfrozen_subscriptions = subscription_service.auto_unfreeze_expired_subscriptions()

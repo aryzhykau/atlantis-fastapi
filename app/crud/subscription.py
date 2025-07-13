@@ -1,11 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from typing import List, Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models import Subscription, StudentSubscription
 from app.schemas.subscription import SubscriptionCreate, SubscriptionUpdate
-from app.schemas.student_subscription import StudentSubscriptionCreate, StudentSubscriptionUpdate
+from app.schemas.subscription import StudentSubscriptionCreate, StudentSubscriptionUpdate
 
 
 # =============================================================================
@@ -117,15 +117,39 @@ def get_student_subscriptions(
     """
     Получение абонементов студента
     """
+    from datetime import datetime, timezone
     query = db.query(StudentSubscription).filter(
         StudentSubscription.student_id == student_id
     )
-    
+    now = datetime.now().replace(microsecond=0)
     if status:
-        query = query.filter(StudentSubscription.status == status)
+        if status == "active":
+            query = query.filter(
+                StudentSubscription.start_date <= now,
+                StudentSubscription.end_date >= now,
+                (
+                    (StudentSubscription.freeze_start_date.is_(None)) |
+                    (
+                        (StudentSubscription.freeze_start_date.isnot(None)) &
+                        (StudentSubscription.freeze_end_date.isnot(None)) &
+                        ((StudentSubscription.freeze_start_date > now) |
+                         (StudentSubscription.freeze_end_date < now))
+                    )
+                )
+            )
+        elif status == "pending":
+            query = query.filter(StudentSubscription.start_date > now)
+        elif status == "frozen":
+            query = query.filter(
+                StudentSubscription.freeze_start_date.isnot(None),
+                StudentSubscription.freeze_end_date.isnot(None),
+                StudentSubscription.freeze_start_date <= now,
+                StudentSubscription.freeze_end_date >= now
+            )
+        elif status == "expired":
+            query = query.filter(StudentSubscription.end_date < now)
     if not include_expired:
-        query = query.filter(StudentSubscription.end_date >= date.today())
-        
+        query = query.filter(StudentSubscription.end_date >= now)
     return query.order_by(StudentSubscription.start_date.desc()).all()
 
 
@@ -137,12 +161,43 @@ def get_student_subscriptions_by_status(
     """
     Получение абонементов студента по статусу
     """
-    return db.query(StudentSubscription).filter(
-        and_(
+    from datetime import datetime, timezone
+    now = datetime.now().replace(microsecond=0)
+    if status == "active":
+        return db.query(StudentSubscription).filter(
             StudentSubscription.student_id == student_id,
-            StudentSubscription.status == status
-        )
-    ).order_by(StudentSubscription.start_date.desc()).all()
+            StudentSubscription.start_date <= now,
+            StudentSubscription.end_date >= now,
+            (
+                (StudentSubscription.freeze_start_date.is_(None)) |
+                (
+                    (StudentSubscription.freeze_start_date.isnot(None)) &
+                    (StudentSubscription.freeze_end_date.isnot(None)) &
+                    ((StudentSubscription.freeze_start_date > now) |
+                     (StudentSubscription.freeze_end_date < now))
+                )
+            )
+        ).order_by(StudentSubscription.start_date.desc()).all()
+    elif status == "pending":
+        return db.query(StudentSubscription).filter(
+            StudentSubscription.student_id == student_id,
+            StudentSubscription.start_date > now
+        ).order_by(StudentSubscription.start_date.desc()).all()
+    elif status == "frozen":
+        return db.query(StudentSubscription).filter(
+            StudentSubscription.student_id == student_id,
+            StudentSubscription.freeze_start_date.isnot(None),
+            StudentSubscription.freeze_end_date.isnot(None),
+            StudentSubscription.freeze_start_date <= now,
+            StudentSubscription.freeze_end_date >= now
+        ).order_by(StudentSubscription.start_date.desc()).all()
+    elif status == "expired":
+        return db.query(StudentSubscription).filter(
+            StudentSubscription.student_id == student_id,
+            StudentSubscription.end_date < now
+        ).order_by(StudentSubscription.start_date.desc()).all()
+    else:
+        return []
 
 
 def get_active_subscription(
@@ -153,24 +208,20 @@ def get_active_subscription(
     """
     Получение активного абонемента студента на дату тренировки
     """
+    from datetime import datetime
+    training_datetime = datetime.combine(training_date, datetime.min.time()).replace(microsecond=0)
     return db.query(StudentSubscription).filter(
-        and_(
-            StudentSubscription.student_id == student_id,
-            StudentSubscription.status == 'active',
-            StudentSubscription.start_date <= training_date,
-            StudentSubscription.end_date >= training_date,
-            StudentSubscription.sessions_left > 0,
-            # Проверяем, что абонемент не заморожен на дату тренировки
-            or_(
-                StudentSubscription.freeze_start_date.is_(None),
-                and_(
-                    StudentSubscription.freeze_start_date.isnot(None),
-                    StudentSubscription.freeze_end_date.isnot(None),
-                    or_(
-                        StudentSubscription.freeze_start_date > training_date,
-                        StudentSubscription.freeze_end_date < training_date
-                    )
-                )
+        StudentSubscription.student_id == student_id,
+        StudentSubscription.start_date <= training_datetime,
+        StudentSubscription.end_date >= training_datetime,
+        StudentSubscription.sessions_left > 0,
+        (
+            (StudentSubscription.freeze_start_date.is_(None)) |
+            (
+                (StudentSubscription.freeze_start_date.isnot(None)) &
+                (StudentSubscription.freeze_end_date.isnot(None)) &
+                ((StudentSubscription.freeze_start_date > training_datetime) |
+                 (StudentSubscription.freeze_end_date < training_datetime))
             )
         )
     ).first()
@@ -183,20 +234,22 @@ def get_active_student_subscriptions(
     """
     Получение активных абонементов студента
     """
-    from datetime import datetime, timezone
-    today = datetime.now(timezone.utc)
-    return (
-        db.query(StudentSubscription)
-        .filter(
-            and_(
-                StudentSubscription.student_id == student_id,
-                StudentSubscription.start_date <= today,
-                StudentSubscription.end_date >= today,
-                ~StudentSubscription.status.in_(["expired", "frozen"])
+    from datetime import datetime
+    now = datetime.now().replace(microsecond=0)
+    return db.query(StudentSubscription).filter(
+        StudentSubscription.student_id == student_id,
+        StudentSubscription.start_date <= now,
+        StudentSubscription.end_date >= now,
+        (
+            (StudentSubscription.freeze_start_date.is_(None)) |
+            (
+                (StudentSubscription.freeze_start_date.isnot(None)) &
+                (StudentSubscription.freeze_end_date.isnot(None)) &
+                ((StudentSubscription.freeze_start_date > now) |
+                 (StudentSubscription.freeze_end_date < now))
             )
         )
-        .all()
-    )
+    ).all()
 
 
 def create_student_subscription(
@@ -212,7 +265,7 @@ def create_student_subscription(
         start_date=subscription_data.start_date,
         end_date=subscription_data.end_date,
         sessions_left=subscription_data.sessions_left,
-        status=subscription_data.status,
+        transferred_sessions=subscription_data.transferred_sessions,
         is_auto_renew=subscription_data.is_auto_renew,
         freeze_start_date=subscription_data.freeze_start_date,
         freeze_end_date=subscription_data.freeze_end_date,
@@ -288,8 +341,8 @@ def add_session(
 def freeze_subscription(
     db: Session,
     student_subscription_id: int,
-    freeze_start_date: date,
-    freeze_end_date: date,
+    freeze_start_date: datetime,
+    freeze_end_date: datetime,
 ) -> Optional[StudentSubscription]:
     """
     Заморозка абонемента
@@ -343,25 +396,34 @@ def get_expiring_subscriptions(
     """
     Получение абонементов, которые скоро истекают
     """
-    expiry_date = date.today() + timedelta(days=days_before_expiry)
+    from datetime import datetime, timedelta
+    now = datetime.now().replace(microsecond=0)
+    expiry_date = now + timedelta(days=days_before_expiry)
     return db.query(StudentSubscription).filter(
-        and_(
-            StudentSubscription.status == 'active',
-            StudentSubscription.end_date <= expiry_date,
-            StudentSubscription.end_date >= date.today(),
+        StudentSubscription.start_date <= now,
+        StudentSubscription.end_date >= now,
+        StudentSubscription.end_date <= expiry_date,
+        (
+            (StudentSubscription.freeze_start_date.is_(None)) |
+            (
+                (StudentSubscription.freeze_start_date.isnot(None)) &
+                (StudentSubscription.freeze_end_date.isnot(None)) &
+                ((StudentSubscription.freeze_start_date > now) |
+                 (StudentSubscription.freeze_end_date < now))
+            )
         )
     ).all()
 
 
 def get_frozen_subscriptions(
     db: Session,
-    current_date: Optional[date] = None,
+    current_date: Optional[datetime] = None,
 ) -> List[StudentSubscription]:
     """
     Получение замороженных абонементов, у которых истек срок заморозки
     """
     if current_date is None:
-        current_date = date.today()
+        current_date = datetime.now(timezone.utc)
         
     return db.query(StudentSubscription).filter(
         and_(
@@ -391,21 +453,64 @@ def update_subscription_auto_renewal_invoice(
     return student_subscription
 
 
-def get_auto_renewal_subscriptions(
+def get_today_auto_renewal_subscriptions(
     db: Session,
-    start_date: datetime,
-    end_date: datetime,
 ) -> List[StudentSubscription]:
     """
-    Получение всех активных абонементов с автопродлением, которые заканчиваются в указанный период
+    Получение всех абонементов с автопродлением, которые заканчиваются сегодня
     """
+    from datetime import datetime, timezone, timedelta
+    
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    current_time = datetime.now(timezone.utc)
+    
     return db.query(StudentSubscription).filter(
         and_(
             StudentSubscription.is_auto_renew == True,
-            StudentSubscription.status == "active",
-            StudentSubscription.end_date >= start_date,
-            StudentSubscription.end_date < end_date,
-            StudentSubscription.auto_renewal_invoice_id.is_(None)  # Защита от дублей
+            StudentSubscription.end_date >= today_start,
+            StudentSubscription.end_date < today_end,
+            StudentSubscription.auto_renewal_invoice_id.is_(None),  # Защита от дублей
+            # Исключаем замороженные подписки - если есть даты заморозки, то подписка заморожена
+            or_(
+                StudentSubscription.freeze_start_date.is_(None),
+                and_(
+                    StudentSubscription.freeze_start_date.isnot(None),
+                    StudentSubscription.freeze_end_date.isnot(None),
+                    # Подписка разморожена только если заморозка уже закончилась
+                    StudentSubscription.freeze_end_date < current_time
+                )
+            )
         )
     ).all()
+
+
+def transfer_sessions(
+    db: Session,
+    old_subscription: StudentSubscription,
+    new_subscription: StudentSubscription,
+    max_sessions: int = 3
+) -> int:
+    """
+    Переносит неиспользованные занятия из старой подписки в новую.
+    Возвращает количество перенесённых занятий.
+    """
+    # Перенести занятия (максимум max_sessions)
+    transferred = min(old_subscription.sessions_left, max_sessions)
+    
+    # Обнуляем старую подписку
+    old_subscription.sessions_left = 0
+    old_subscription.transferred_sessions = 0
+    
+    # Добавляем занятия в новую подписку
+    new_subscription.sessions_left += transferred
+    new_subscription.transferred_sessions = transferred
+    
+    # НЕ делаем commit здесь - это делает сервис
+    db.flush()  # Обновляем объекты, но не коммитим
+    db.refresh(old_subscription)
+    db.refresh(new_subscription)
+    
+    return transferred
+
 

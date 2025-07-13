@@ -62,4 +62,21 @@ class RealTrainingResponse(RealTrainingBase):
 class TrainingCancellationRequest(BaseModel):
     """Схема для отмены тренировки"""
     reason: str
-    process_refunds: bool = True  # Нужно ли запускать финансовые процессы 
+    process_refunds: bool = True  # Нужно ли запускать финансовые процессы
+
+
+class RealTrainingStudentCreate(BaseModel):
+    """Схема для создания записи студента на тренировку"""
+    student_id: int
+    subscription_id: Optional[int] = None
+    status: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RealTrainingStudentUpdate(BaseModel):
+    """Схема для обновления записи студента на тренировку"""
+    status: Optional[str] = None
+    cancellation_reason: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True) 
