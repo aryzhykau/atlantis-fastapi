@@ -7,13 +7,11 @@ from app.models import Invoice, InvoiceStatus, InvoiceType
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
 
 
-# =============================================================================
-# ПРОСТЫЕ CRUD ОПЕРАЦИИ С ИНВОЙСАМИ
-# =============================================================================
+
 
 def get_invoice(db: Session, invoice_id: int) -> Optional[Invoice]:
     """
-    Получение инвойса по ID
+    Get invoice by ID
     """
     return db.query(Invoice).filter(Invoice.id == invoice_id).first()
 
@@ -29,7 +27,7 @@ def get_invoices(
     limit: int = 100,
 ) -> List[Invoice]:
     """
-    Получение списка инвойсов с фильтрами
+    Get a list of invoices with filters
     """
     query = db.query(Invoice)
     
@@ -54,7 +52,7 @@ def get_student_invoices(
     limit: int = 100,
 ) -> List[Invoice]:
     """
-    Получение списка инвойсов студента
+    Get a list of invoices for a student
     """
     query = db.query(Invoice).filter(Invoice.student_id == student_id)
     
@@ -73,7 +71,7 @@ def get_client_invoices(
     limit: int = 100,
 ) -> List[Invoice]:
     """
-    Получение списка инвойсов клиента
+    Get a list of invoices for a client
     """
     query = db.query(Invoice).filter(Invoice.client_id == client_id)
     
@@ -89,7 +87,7 @@ def get_training_invoice(
     student_id: int,
 ) -> Optional[Invoice]:
     """
-    Получение инвойса за конкретную тренировку студента
+    Get invoice for a specific training of a student
     """
     return db.query(Invoice).filter(
         and_(
@@ -106,7 +104,7 @@ def get_subscription_invoice(
     student_id: int,
 ) -> Optional[Invoice]:
     """
-    Получение инвойса за абонемент студента
+    Get invoice for a student's subscription
     """
     return db.query(Invoice).filter(
         and_(
@@ -119,7 +117,7 @@ def get_subscription_invoice(
 
 def create_invoice(db: Session, invoice_data: InvoiceCreate) -> Invoice:
     """
-    Создание нового инвойса
+    Create a new invoice
     """
     invoice = Invoice(
         client_id=invoice_data.client_id,
@@ -134,9 +132,7 @@ def create_invoice(db: Session, invoice_data: InvoiceCreate) -> Invoice:
         is_auto_renewal=invoice_data.is_auto_renewal,
     )
     db.add(invoice)
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Получаем ID, но не коммитим
-    db.refresh(invoice)
+    
     return invoice
 
 
@@ -146,7 +142,7 @@ def update_invoice(
     update_data: InvoiceUpdate,
 ) -> Optional[Invoice]:
     """
-    Обновление инвойса
+    Update an existing invoice
     """
     invoice = get_invoice(db, invoice_id)
     if not invoice:
@@ -156,15 +152,14 @@ def update_invoice(
     for field, value in update_dict.items():
         setattr(invoice, field, value)
 
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Обновляем объект, но не коммитим
+    db.flush()
     db.refresh(invoice)
     return invoice
 
 
-def cancel_invoice(db: Session, invoice_id: int) -> Optional[Invoice]:
+def cancel_invoice(db: Session, invoice_id: int, cancelled_by_id: int) -> Optional[Invoice]:
     """
-    Отмена инвойса
+    Cancel an invoice
     """
     invoice = get_invoice(db, invoice_id)
     if not invoice:
@@ -172,9 +167,6 @@ def cancel_invoice(db: Session, invoice_id: int) -> Optional[Invoice]:
 
     invoice.status = InvoiceStatus.CANCELLED
     invoice.cancelled_at = datetime.now(timezone.utc)
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Обновляем объект, но не коммитим
-    db.refresh(invoice)
     return invoice
 
 
@@ -184,7 +176,7 @@ def mark_invoice_as_paid(
     paid_at: Optional[datetime] = None
 ) -> Optional[Invoice]:
     """
-    Отметка инвойса как оплаченного
+    Mark invoice as paid
     """
     invoice = get_invoice(db, invoice_id)
     if not invoice:
@@ -192,9 +184,6 @@ def mark_invoice_as_paid(
 
     invoice.status = InvoiceStatus.PAID
     invoice.paid_at = paid_at or datetime.now(timezone.utc)
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Обновляем объект, но не коммитим
-    db.refresh(invoice)
     return invoice
 
 
@@ -203,7 +192,7 @@ def mark_invoice_as_unpaid(
     invoice_id: int
 ) -> Optional[Invoice]:
     """
-    Возврат инвойса в неоплаченное состояние
+    Mark invoice as unpaid
     """
     invoice = get_invoice(db, invoice_id)
     if not invoice:
@@ -211,9 +200,6 @@ def mark_invoice_as_unpaid(
 
     invoice.status = InvoiceStatus.UNPAID
     invoice.paid_at = None
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Обновляем объект, но не коммитим
-    db.refresh(invoice)
     return invoice
 
 
@@ -224,7 +210,7 @@ def get_unpaid_invoices(
     student_id: Optional[int] = None,
 ) -> List[Invoice]:
     """
-    Получение неоплаченных инвойсов
+    Get unpaid invoices
     """
     query = db.query(Invoice).filter(Invoice.status == InvoiceStatus.UNPAID)
     
@@ -245,7 +231,7 @@ def get_paid_invoices(
     end_date: Optional[datetime] = None,
 ) -> List[Invoice]:
     """
-    Получение оплаченных инвойсов
+    Get paid invoices
     """
     query = db.query(Invoice).filter(Invoice.status == InvoiceStatus.PAID)
     
@@ -261,6 +247,23 @@ def get_paid_invoices(
     return query.order_by(desc(Invoice.paid_at)).all()
 
 
+def get_paid_invoices_by_client(
+    db: Session,
+    client_id: int,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+) -> List[Invoice]:
+    """
+    Get paid invoices for a client
+    """
+    return get_paid_invoices(
+        db,
+        client_id=client_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+
 def get_cancelled_invoices(
     db: Session,
     *,
@@ -268,7 +271,7 @@ def get_cancelled_invoices(
     student_id: Optional[int] = None,
 ) -> List[Invoice]:
     """
-    Получение отменённых инвойсов
+    Get cancelled invoices
     """
     query = db.query(Invoice).filter(Invoice.status == InvoiceStatus.CANCELLED)
     
@@ -280,17 +283,14 @@ def get_cancelled_invoices(
     return query.order_by(desc(Invoice.cancelled_at)).all()
 
 
-def delete_invoice(db: Session, invoice_id: int) -> bool:
+def delete_invoice(db: Session, invoice_id: int) -> Optional[Invoice]:
     """
-    Удаление инвойса (только для отменённых)
+    Delete an invoice by ID
     """
-    invoice = get_invoice(db, invoice_id)
-    if not invoice or invoice.status != InvoiceStatus.CANCELLED:
-        return False
-
-    db.delete(invoice)
-    # НЕ делаем commit здесь - это делает сервис
-    return True
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if invoice:
+        db.delete(invoice)
+    return invoice
 
 
 def get_invoice_count(
@@ -301,7 +301,7 @@ def get_invoice_count(
     status: Optional[InvoiceStatus] = None,
 ) -> int:
     """
-    Получение количества инвойсов
+    Get the count of invoices
     """
     query = db.query(Invoice)
     

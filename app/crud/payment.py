@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.models import Payment
+from app.models import Payment, PaymentHistory
 from app.schemas.payment import PaymentCreate, PaymentUpdate
 
 
@@ -43,26 +43,31 @@ def get_client_payments(
     db: Session,
     client_id: int,
     *,
+    cancelled_status: str = "all",
     skip: int = 0,
     limit: int = 100,
 ) -> List[Payment]:
     """
     Получение платежей клиента
     """
-    return get_payments(db, client_id=client_id, skip=skip, limit=limit)
+    if cancelled_status == "cancelled":
+        return get_cancelled_payments(db, client_id=client_id, skip=skip, limit=limit)
+    elif cancelled_status == "not_cancelled":
+        return get_active_payments(db, client_id=client_id, skip=skip, limit=limit)
+    else:
+        return get_payments(db, client_id=client_id, skip=skip, limit=limit)
 
 
-def create_payment(db: Session, payment_data: PaymentCreate) -> Payment:
+def create_payment(db: Session, client_id: int, amount: float, description: str = None, registered_by_id: int = None) -> Payment:
     """
     Создание нового платежа
     """
     db_payment = Payment(
-        client_id=payment_data.client_id,
-        amount=payment_data.amount,
-        payment_method=payment_data.payment_method,
-        description=payment_data.description,
-        payment_date=payment_data.payment_date or datetime.now(timezone.utc),
-        created_by_id=payment_data.created_by_id,
+        client_id=client_id,
+        amount=amount,
+        description=description,
+        payment_date=datetime.now(timezone.utc),
+        registered_by_id=registered_by_id,
     )
     db.add(db_payment)
     # НЕ делаем commit здесь - это делает сервис
@@ -97,6 +102,7 @@ def cancel_payment(
     db: Session,
     payment_id: int,
     cancelled_by_id: Optional[int] = None,
+    cancellation_reason: Optional[str] = None,
 ) -> Optional[Payment]:
     """
     Отмена платежа
@@ -110,6 +116,7 @@ def cancel_payment(
 
     payment.cancelled_at = datetime.now(timezone.utc)
     payment.cancelled_by_id = cancelled_by_id
+    payment.cancellation_reason = cancellation_reason
 
     # НЕ делаем commit здесь - это делает сервис
     db.flush()  # Обновляем объект, но не коммитим
@@ -185,3 +192,17 @@ def delete_payment(db: Session, payment_id: int) -> bool:
     db.delete(payment)
     # НЕ делаем commit здесь - это делает сервис
     return True
+
+
+def get_payment_history(
+    db: Session,
+    client_id: int,
+    skip: int = 0,
+    limit: int = 100
+) -> List[PaymentHistory]:
+    """
+    Получение истории платежей клиента
+    """
+    return db.query(PaymentHistory).filter(
+        PaymentHistory.client_id == client_id
+    ).order_by(desc(PaymentHistory.created_at)).offset(skip).limit(limit).all()

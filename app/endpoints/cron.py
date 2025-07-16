@@ -9,7 +9,7 @@ from app.models import User, UserRole
 from app.services.subscription import SubscriptionService
 from app.services.training_processing import TrainingProcessingService
 from app.services.daily_operations import DailyOperationsService
-from app.services.invoice import InvoiceService
+from app.services.financial import FinancialService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -91,8 +91,8 @@ def process_invoices_endpoint(
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
-        invoice_service = InvoiceService(db)
-        result = invoice_service.process_invoices(current_user["id"])
+        financial_service = FinancialService(db)
+        result = financial_service.process_invoices(current_user["id"])
         
         return {
             "message": "Invoice processing completed",

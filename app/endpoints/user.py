@@ -5,7 +5,7 @@ from typing import List
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
 from app.schemas.user import UserMe, UserRole, UserListResponse
-from app.crud.user import get_user_by_id, get_user_by_email, delete_user, get_all_users
+from app.crud.user import get_user, get_user_by_email, delete_user, get_all_users
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

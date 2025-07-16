@@ -9,7 +9,7 @@ from app.schemas.user import TrainerCreate, TrainerResponse, TrainerUpdate, Trai
 from app.schemas.payment import PaymentResponse, PaymentHistoryFilterRequest, PaymentHistoryListResponse, PaymentListResponse
 from app.crud.trainer import (create_trainer, get_trainer, get_all_trainers,
                               update_trainer, delete_trainer, update_trainer_status)
-from app.services.payment import PaymentService
+from app.services.financial import FinancialService
 
 router = APIRouter(prefix="/trainers", tags=["Trainers"])
 
@@ -127,7 +127,7 @@ def get_trainer_payments_endpoint(
             filters.date_from = (today - timedelta(days=14)).strftime("%Y-%m-%d")
 
     
-    service = PaymentService(db)
+    service = FinancialService(db)
     result = service.get_payment_history_with_filters(
         user_id=current_user["id"],
         filters=filters
@@ -174,7 +174,7 @@ def get_trainer_registered_payments_endpoint(
     if not trainer:
         raise HTTPException(status_code=404, detail="Тренер не найден")
     
-    service = PaymentService(db)
+    service = FinancialService(db)
     result = service.get_trainer_registered_payments(
         trainer_id=trainer_id,
         period=period,

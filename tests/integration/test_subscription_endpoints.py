@@ -237,13 +237,48 @@ class TestSubscriptionEndpoints:
         self,
         client: TestClient,
         auth_headers: dict,
-        test_student,
+        db_session: Session,
         test_subscription
     ):
         """Тест добавления подписки неактивному студенту"""
-        # Этот тест требует более сложной настройки, пропускаем пока
-        # TODO: Добавить тест с моком для неактивного студента
-        pass
+        # Create an inactive student
+        from app.models import Student, User
+        from datetime import date
+        
+        inactive_client = User(
+            first_name="Inactive",
+            last_name="Client",
+            date_of_birth=date(1990, 1, 1),
+            email="inactive.client@example.com",
+            phone="1234567890",
+            role="CLIENT",
+            is_active=False
+        )
+        db_session.add(inactive_client)
+        db_session.commit()
+        db_session.refresh(inactive_client)
+
+        inactive_student = Student(
+            client_id=inactive_client.id,
+            first_name="Inactive",
+            last_name="Student",
+            date_of_birth=date(2000, 1, 1),
+            is_active=False
+        )
+        db_session.add(inactive_student)
+        db_session.commit()
+        db_session.refresh(inactive_student)
+
+        subscription_data = {
+            "student_id": inactive_student.id,
+            "subscription_id": test_subscription.id,
+            "is_auto_renew": False
+        }
+        
+        response = client.post("/subscriptions/student", json=subscription_data, headers=auth_headers)
+        
+        assert response.status_code == 400
+        assert "Cannot add subscription to inactive student" in response.json()["detail"]
     
     def test_get_student_subscriptions_endpoint(
         self,

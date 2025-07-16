@@ -12,7 +12,7 @@ from app.schemas.invoice import (
     InvoiceResponse,
     InvoiceList
 )
-from app.services.invoice import InvoiceService
+from app.services.financial import FinancialService
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
@@ -27,7 +27,7 @@ def get_invoice(
     Получение информации об инвойсе.
     Доступно всем авторизованным пользователям.
     """
-    service = InvoiceService(db)
+    service = FinancialService(db)
     invoice = service.get_invoice(invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -47,7 +47,7 @@ def get_student_invoices(
     Получение списка инвойсов студента.
     Доступно всем авторизованным пользователям.
     """
-    service = InvoiceService(db)
+    service = FinancialService(db)
     invoices = service.get_student_invoices(
         student_id=student_id,
         status=status,
@@ -70,7 +70,7 @@ def get_client_invoices(
     Получение списка инвойсов клиента.
     Доступно всем авторизованным пользователям.
     """
-    service = InvoiceService(db)
+    service = FinancialService(db)
     invoices = service.get_client_invoices(
         client_id=client_id,
         status=status,
@@ -90,15 +90,18 @@ def create_subscription_invoice(
     Создание инвойса для абонемента.
     Доступно всем авторизованным пользователям.
     """
-    service = InvoiceService(db)
-    return service.create_subscription_invoice(
-        client_id=invoice_data.client_id,
-        student_id=invoice_data.student_id,
-        subscription_id=invoice_data.subscription_id,
-        amount=invoice_data.amount,
-        description=invoice_data.description,
-        is_auto_renewal=invoice_data.is_auto_renewal
-    )
+    service = FinancialService(db)
+    try:
+        return service.create_subscription_invoice(
+            client_id=invoice_data.client_id,
+            student_id=invoice_data.student_id,
+            subscription_id=invoice_data.subscription_id,
+            amount=invoice_data.amount,
+            description=invoice_data.description,
+            is_auto_renewal=invoice_data.is_auto_renewal
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/training", response_model=InvoiceResponse)
@@ -111,14 +114,17 @@ def create_training_invoice(
     Создание инвойса для разовой тренировки.
     Доступно всем авторизованным пользователям.
     """
-    service = InvoiceService(db)
-    return service.create_training_invoice(
-        client_id=invoice_data.client_id,
-        student_id=invoice_data.student_id,
-        training_id=invoice_data.training_id,
-        amount=invoice_data.amount,
-        description=invoice_data.description
-    )
+    service = FinancialService(db)
+    try:
+        return service.create_training_invoice(
+            client_id=invoice_data.client_id,
+            student_id=invoice_data.student_id,
+            training_id=invoice_data.training_id,
+            amount=invoice_data.amount,
+            description=invoice_data.description
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/{invoice_id}/cancel", response_model=InvoiceResponse)
@@ -131,8 +137,11 @@ def cancel_invoice(
     Отмена инвойса.
     Только для админов.
     """
-    service = InvoiceService(db)
-    return service.cancel_invoice(
-        invoice_id=invoice_id,
-        cancelled_by_id=current_user["id"]
-    ) 
+    service = FinancialService(db)
+    try:
+        return service.cancel_invoice(
+            invoice_id=invoice_id,
+            cancelled_by_id=current_user["id"]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) 

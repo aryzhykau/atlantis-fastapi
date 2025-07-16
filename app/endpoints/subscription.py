@@ -19,8 +19,14 @@ from app.schemas.subscription import (
 
 from app.schemas.user import UserRole
 from app.services.subscription import SubscriptionService
-
-
+from app.crud import subscription as crud_subscription # Import crud for direct calls
+from app.errors.subscription_errors import (
+    SubscriptionError,
+    SubscriptionNotFound,
+    SubscriptionNotActive,
+    SubscriptionAlreadyFrozen,
+    SubscriptionNotFrozen
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +43,10 @@ def create_subscription_endpoint(
     if current_user["role"] != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Forbidden")
     service = SubscriptionService(db)
-    return service.create_subscription(subscription_data)
+    try:
+        return service.create_subscription(subscription_data)
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Получение списка всех абонементов
@@ -46,8 +55,8 @@ def get_subscriptions_endpoint(
         current_user=Depends(verify_jwt_token),
         db: Session = Depends(get_db),
 ):
-    service = SubscriptionService(db)
-    subscriptions = service.get_all_subscriptions()
+    # Direct CRUD call as no business logic is involved
+    subscriptions = crud_subscription.get_subscriptions(db)
     return SubscriptionList(items=subscriptions, total=len(subscriptions))
 
 
@@ -58,8 +67,8 @@ def get_subscription_endpoint(
         current_user=Depends(verify_jwt_token),
         db: Session = Depends(get_db),
 ):
-    service = SubscriptionService(db)
-    subscription = service.get_subscription(subscription_id)
+    # Direct CRUD call as no business logic is involved
+    subscription = crud_subscription.get_subscription_by_id(db, subscription_id)
     if not subscription:
         raise HTTPException(status_code=404, detail="Subscription not found")
     return subscription
@@ -81,11 +90,15 @@ def update_subscription_endpoint(
         raise HTTPException(status_code=403, detail="Only admins can update subscriptions")
     
     service = SubscriptionService(db)
-    updated_subscription = service.update_subscription(subscription_id, subscription_data)
-    if not updated_subscription:
-        raise HTTPException(status_code=404, detail="Subscription not found")
-    
-    return updated_subscription
+    try:
+        updated_subscription = service.update_subscription(subscription_id, subscription_data)
+        if not updated_subscription:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return updated_subscription
+    except SubscriptionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/student", response_model=StudentSubscriptionResponse)
@@ -100,12 +113,19 @@ def add_subscription_to_student(
     """
     
     service = SubscriptionService(db)
-    return service.add_subscription_to_student(
-        student_id=student_subscription.student_id,
-        subscription_id=student_subscription.subscription_id,
-        is_auto_renew=student_subscription.is_auto_renew,
-        created_by_id=current_user["id"]
-    )
+    try:
+        return service.add_subscription_to_student(
+            student_id=student_subscription.student_id,
+            subscription_id=student_subscription.subscription_id,
+            is_auto_renew=student_subscription.is_auto_renew,
+            created_by_id=current_user["id"]
+        )
+    except SubscriptionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except SubscriptionNotActive as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/student/{student_id}", response_model=List[StudentSubscriptionResponse])
@@ -118,8 +138,8 @@ def get_student_subscriptions(
     Получение списка абонементов студента.
     Доступно всем авторизованным пользователям.
     """
-    service = SubscriptionService(db)
-    return service.get_active_student_subscriptions(student_id)
+    # Direct CRUD call as no business logic is involved
+    return crud_subscription.get_active_student_subscriptions(db, student_id)
 
 
 @router.patch("/student/{subscription_id}/auto-renewal", response_model=StudentSubscriptionResponse)
@@ -134,11 +154,16 @@ def update_auto_renewal(
     Только для админов и тренеров.
     """
     service = SubscriptionService(db)
-    return service.update_auto_renewal(
-        student_subscription_id=subscription_id,
-        is_auto_renew=update.is_auto_renew,
-        updated_by_id=current_user["id"]
-    )
+    try:
+        return service.update_auto_renewal(
+            student_subscription_id=subscription_id,
+            is_auto_renew=update.is_auto_renew,
+            updated_by_id=current_user["id"]
+        )
+    except SubscriptionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/student/{subscription_id}/freeze", response_model=StudentSubscriptionResponse)
@@ -153,12 +178,21 @@ def freeze_subscription(
     Только для админов и тренеров.
     """
     service = SubscriptionService(db)
-    return service.freeze_subscription(
-        student_subscription_id=subscription_id,
-        freeze_start_date=freeze_data.freeze_start_date,
-        freeze_duration_days=freeze_data.freeze_duration_days,
-        updated_by_id=current_user["id"]
-    )
+    try:
+        return service.freeze_subscription(
+            student_subscription_id=subscription_id,
+            freeze_start_date=freeze_data.freeze_start_date,
+            freeze_duration_days=freeze_data.freeze_duration_days,
+            updated_by_id=current_user["id"]
+        )
+    except SubscriptionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except SubscriptionNotActive as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SubscriptionAlreadyFrozen as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/student/{subscription_id}/unfreeze", response_model=StudentSubscriptionResponse)
@@ -172,13 +206,14 @@ def unfreeze_subscription(
     Только для админов и тренеров.
     """
     service = SubscriptionService(db)
-    return service.unfreeze_subscription(
-        student_subscription_id=subscription_id,
-        updated_by_id=current_user["id"]
-    )
-
-
-
-
-
-
+    try:
+        return service.unfreeze_subscription(
+            student_subscription_id=subscription_id,
+            updated_by_id=current_user["id"]
+        )
+    except SubscriptionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except SubscriptionNotFrozen as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))

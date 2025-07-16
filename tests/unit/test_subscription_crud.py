@@ -2,6 +2,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.models.subscription import StudentSubscription
+from app.crud.subscription import get_subscription_by_name
 
 
 class TestSubscriptionCRUD:
@@ -169,3 +170,13 @@ class TestSubscriptionCRUD:
         assert old_subscription.transferred_sessions == 0
         assert new_subscription.sessions_left == 8  # Без изменений
         assert new_subscription.transferred_sessions == 0 
+
+    def test_get_subscription_by_name(self, db_session: Session, test_subscription):
+        """Тест получения подписки по названию"""
+        subscription = get_subscription_by_name(db_session, test_subscription.name)
+        assert subscription is not None
+        assert subscription.name == test_subscription.name
+        
+        # Тест с несуществующим названием
+        non_existent = get_subscription_by_name(db_session, "Non Existent Subscription")
+        assert non_existent is None

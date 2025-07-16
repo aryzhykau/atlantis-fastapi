@@ -7,6 +7,7 @@ from app.services.subscription import SubscriptionService
 from app.models import Invoice
 from app.models.invoice import InvoiceStatus
 from app.schemas.subscription import SubscriptionUpdate
+from app.errors.subscription_errors import SubscriptionNotFound, SubscriptionNotActive, SubscriptionAlreadyFrozen, SubscriptionNotFrozen
 
 
 class TestSubscriptionServiceIntegration:
@@ -384,35 +385,7 @@ class TestSubscriptionServiceIntegration:
         assert invoice.student_id == test_student.id
         assert invoice.subscription_id == test_subscription.id 
     
-    def test_get_subscription_by_name_integration(
-        self,
-        db_session: Session,
-        test_subscription
-    ):
-        """Интеграционный тест получения подписки по названию"""
-        service = SubscriptionService(db_session)
-        
-        # Получаем подписку по названию
-        subscription = service.get_subscription_by_name(test_subscription.name)
-        assert subscription is not None
-        assert subscription.name == test_subscription.name
-        
-        # Тест с несуществующим названием
-        non_existent = service.get_subscription_by_name("Non Existent Subscription")
-        assert non_existent is None
     
-    def test_get_active_subscriptions_integration(
-        self,
-        db_session: Session,
-        test_subscription
-    ):
-        """Интеграционный тест получения активных подписок"""
-        service = SubscriptionService(db_session)
-        
-        # Получаем активные подписки
-        active_subscriptions = service.get_active_subscriptions()
-        assert len(active_subscriptions) >= 1
-        assert all(sub.is_active for sub in active_subscriptions)
     
     def test_update_subscription_integration(
         self,
@@ -445,47 +418,6 @@ class TestSubscriptionServiceIntegration:
         updated_data = SubscriptionUpdate(name="Test")
         result = service.update_subscription(99999, updated_data)
         assert result is None
-    
-    def test_get_student_subscriptions_with_filters_integration(
-        self,
-        db_session: Session,
-        test_student,
-        test_student_subscription
-    ):
-        """Интеграционный тест получения подписок студента с фильтрами"""
-        from sqlalchemy import func
-        import datetime
-        service = SubscriptionService(db_session)
-
-      
-
-        # Получаем все подписки студента
-        all_subscriptions = service.get_student_subscriptions(test_student.id, include_expired=True)
-        
-        
-
-        # Получаем только активные подписки
-        active_subscriptions = service.get_student_subscriptions(test_student.id, status="active")
-       
-
-
-        assert len(all_subscriptions) >= 1
-        assert len(active_subscriptions) >= 1
-        assert all(sub.status == "active" for sub in active_subscriptions)
-    
-    def test_get_student_subscriptions_by_status_integration(
-        self,
-        db_session: Session,
-        test_student,
-        test_student_subscription
-    ):
-        """Интеграционный тест получения подписок студента по статусу"""
-        service = SubscriptionService(db_session)
-        
-        # Получаем подписки по статусу
-        active_subscriptions = service.get_student_subscriptions_by_status(test_student.id, "active")
-        assert len(active_subscriptions) >= 1
-        assert all(sub.status == "active" for sub in active_subscriptions)
     
     def test_deduct_session_integration(
         self,
@@ -593,7 +525,7 @@ class TestSubscriptionServiceIntegration:
         """Интеграционный тест добавления подписки несуществующему студенту"""
         service = SubscriptionService(db_session)
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotFound) as exc_info:
             service.add_subscription_to_student(
                 student_id=99999,
                 subscription_id=test_subscription.id,
@@ -601,8 +533,7 @@ class TestSubscriptionServiceIntegration:
                 created_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 404
-        assert "Student not found" in str(exc_info.value.detail)
+        assert "Student not found" in str(exc_info.value)
     
     def test_add_subscription_to_student_subscription_not_found_integration(
         self,
@@ -613,7 +544,7 @@ class TestSubscriptionServiceIntegration:
         """Интеграционный тест добавления несуществующей подписки"""
         service = SubscriptionService(db_session)
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotFound) as exc_info:
             service.add_subscription_to_student(
                 student_id=test_student.id,
                 subscription_id=99999,
@@ -621,8 +552,7 @@ class TestSubscriptionServiceIntegration:
                 created_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 404
-        assert "Subscription not found" in str(exc_info.value.detail)
+        assert "Subscription not found" in str(exc_info.value)
     
     def test_update_auto_renewal_subscription_not_found_integration(
         self,
@@ -632,15 +562,14 @@ class TestSubscriptionServiceIntegration:
         """Интеграционный тест обновления автопродления несуществующей подписки"""
         service = SubscriptionService(db_session)
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotFound) as exc_info:
             service.update_auto_renewal(
                 student_subscription_id=99999,
                 is_auto_renew=True,
                 updated_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 404
-        assert "Subscription not found" in str(exc_info.value.detail)
+        assert "Subscription not found" in str(exc_info.value)
     
     def test_freeze_subscription_not_found_integration(
         self,
@@ -650,7 +579,7 @@ class TestSubscriptionServiceIntegration:
         """Интеграционный тест заморозки несуществующей подписки"""
         service = SubscriptionService(db_session)
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotFound) as exc_info:
             service.freeze_subscription(
                 student_subscription_id=99999,
                 freeze_start_date=datetime.now(timezone.utc),
@@ -658,8 +587,7 @@ class TestSubscriptionServiceIntegration:
                 updated_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 404
-        assert "Subscription not found" in str(exc_info.value.detail)
+        assert "Subscription not found" in str(exc_info.value)
     
     def test_freeze_inactive_subscription_integration(
         self,
@@ -674,7 +602,7 @@ class TestSubscriptionServiceIntegration:
         test_student_subscription.end_date = datetime.now(timezone.utc) - timedelta(days=1)
         db_session.commit()
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotActive) as exc_info:
             service.freeze_subscription(
                 student_subscription_id=test_student_subscription.id,
                 freeze_start_date=datetime.now(timezone.utc),
@@ -682,8 +610,7 @@ class TestSubscriptionServiceIntegration:
                 updated_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 400
-        assert "Can only freeze active subscriptions" in str(exc_info.value.detail)
+        assert "Can only freeze active subscriptions" in str(exc_info.value)
     
     def test_unfreeze_subscription_not_found_integration(
         self,
@@ -693,14 +620,13 @@ class TestSubscriptionServiceIntegration:
         """Интеграционный тест разморозки несуществующей подписки"""
         service = SubscriptionService(db_session)
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotFound) as exc_info:
             service.unfreeze_subscription(
                 student_subscription_id=99999,
                 updated_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 404
-        assert "Subscription not found" in str(exc_info.value.detail)
+        assert "Subscription not found" in str(exc_info.value)
     
     def test_unfreeze_not_frozen_subscription_integration(
         self,
@@ -716,11 +642,10 @@ class TestSubscriptionServiceIntegration:
         test_student_subscription.freeze_end_date = None
         db_session.commit()
         
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(SubscriptionNotFrozen) as exc_info:
             service.unfreeze_subscription(
                 student_subscription_id=test_student_subscription.id,
                 updated_by_id=test_admin.id
             )
         
-        assert exc_info.value.status_code == 400
-        assert "Subscription is not frozen" in str(exc_info.value.detail) 
+        assert "Subscription is not frozen" in str(exc_info.value) 

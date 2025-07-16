@@ -1,54 +1,71 @@
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models import User
+from app.schemas.user import UserUpdate
 
 
-# Получить пользователя по ID
-def get_user_by_id(db: Session, user_id: int):
+# Get user by ID
+def get_user(db: Session, user_id: int) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
 
 
-# Получить пользователя по email
-def get_user_by_email(db: Session, email: str):
+# Get user by email
+def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    """
+    Get a user by email
+    """
     return db.query(User).filter(User.email == email).first()
 
 
-# Получить всех пользователей для автокомплита
-def get_all_users(db: Session):
+# Get all users for autocomplete
+def get_all_users(db: Session) -> List[User]:
+    """
+    Get all users for autocomplete
+    """
     return db.query(User).order_by(User.first_name, User.last_name).all()
 
 
-# Получить активных пользователей
-def get_active_users(db: Session):
+# Get active users
+def get_active_users(db: Session) -> List[User]:
+    """
+    Get active users
+    """
     return db.query(User).filter(User.is_active == True).order_by(User.first_name, User.last_name).all()
 
 
-# Получить пользователей по роли
-def get_users_by_role(db: Session, role: str):
+# Get users by role
+def get_users_by_role(db: Session, role: str) -> List[User]:
+    """
+    Get users by role
+    """
     return db.query(User).filter(User.role == role).order_by(User.first_name, User.last_name).all()
 
 
-# Обновить баланс пользователя
-def update_user_balance(db: Session, user_id: int, new_balance: float):
-    user = get_user_by_id(db, user_id)
-    if user:
-        user.balance = new_balance
-        # НЕ делаем commit здесь - это делает сервис
-        db.flush()
-        db.refresh(user)
-        return user
-    return None
+# Update user balance
+def update_user(db: Session, user_id: int, user_in: UserUpdate) -> Optional[User]:
+    """
+    Update an existing user
+    """
+    user = get_user(db, user_id)
+    if not user:
+        return None
+
+    update_data = user_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    return user
 
 
-# Получить текущего пользователя
-def get_user_me(db: Session, user_id: int):
-    return db.query(User).filter(User.id == user_id).first()
 
 
-# Удалить пользователя
-def delete_user(db: Session, user_id: int):
+
+# Delete user
+def delete_user(db: Session, user_id: int) -> Optional[User]:
+    """
+    Delete a user by ID
+    """
     user = db.query(User).filter(User.id == user_id).first()
     if user:
         db.delete(user)
-        db.commit()
-        return True
-    return False
+        return user
+    return None
