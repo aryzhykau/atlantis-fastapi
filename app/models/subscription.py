@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, case, func
 from sqlalchemy.orm import relationship, column_property
@@ -48,7 +48,7 @@ class StudentSubscription(Base):
     @hybrid_property
     def status(self):
         """Вычисляет статус абонемента с учетом временных зон"""
-        current_time = datetime.now()  # Используем naive datetime
+        current_time = datetime.now(timezone.utc)  # Используем timezone-aware datetime
         
         # Проверяем, что подписка ещё не началась (для автопродления)
         if current_time < self.start_date:

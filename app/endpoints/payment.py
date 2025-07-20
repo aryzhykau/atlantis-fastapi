@@ -223,7 +223,7 @@ def get_client_balance(
     Доступно админам и тренерам.
     """
     # Direct CRUD call as no business logic is involved
-    user = crud_user.get_user(db, client_id)
+    user = crud_user.get_user_by_id(db, client_id)
     if not user:
         raise HTTPException(status_code=404, detail="Client not found")
     return ClientBalanceResponse(client_id=client_id, balance=user.balance)

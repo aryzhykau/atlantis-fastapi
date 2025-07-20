@@ -28,7 +28,7 @@ class FinancialService:
         """Creates a new invoice and optionally tries to pay it, all within a single transaction."""
         with transactional(self.db) as session:
             # Validate existence of related entities
-            client = user_crud.get_user(session, invoice_data.client_id)
+            client = user_crud.get_user_by_id(session, invoice_data.client_id)
             if not client:
                 raise ValueError("Client not found")
 
@@ -59,7 +59,7 @@ class FinancialService:
         if auto_pay:
             # This is a simplified logic. A real system might have more complex rules.
             # For now, we assume if a client has a balance, they want to use it.
-            user = user_crud.get_user(session, new_invoice.client_id)
+            user = user_crud.get_user_by_id(session, new_invoice.client_id)
             client_balance = user.balance if user and user.balance is not None else 0.0
 
             if client_balance >= new_invoice.amount:
@@ -135,53 +135,49 @@ class FinancialService:
         self, session: Session, payment_id: int, cancelled_by_id: int, cancellation_reason: Optional[str] = None
     ) -> Payment:
         """Core logic for cancelling a payment and reverting paid invoices. Does not commit."""
-        # Get the payment
+        # 1. Retrieve Payment & Client
         payment_to_cancel = payment_crud.get_payment(session, payment_id)
         if not payment_to_cancel:
-            # This should be a custom exception
             raise ValueError("Payment not found")
 
-        # Cancel the payment
+        user = user_crud.get_user_by_id(session, payment_to_cancel.client_id)
+        if not user:
+            raise ValueError("Client not found for cancellation")
+
+        user_initial_balance = user.balance if user.balance is not None else 0.0
+
+        # 2. Apply Refund to Balance
+        user.balance -= payment_to_cancel.amount
+
+        # 3. Resolve Negative Balance by Reopening Invoices
+        if user.balance < 0:
+            paid_invoices = invoice_crud.get_paid_invoices_by_client(session, payment_to_cancel.client_id)
+            for invoice in sorted(paid_invoices, key=lambda i: i.paid_at, reverse=True):
+                if user.balance >= 0:
+                    break
+                invoice_crud.mark_invoice_as_unpaid(session, invoice.id)
+                user.balance += invoice.amount
+
+        # 4. Cancel the Payment Record
         cancelled_payment = payment_crud.cancel_payment(
             session, payment_id, cancelled_by_id, cancellation_reason
         )
 
-        # Get the user's balance before any changes from this cancellation
-        user = session.query(User).filter(User.id == cancelled_payment.client_id).first()
-        if not user:
-            raise ValueError("Client not found for cancellation") # Or a more specific exception
-        user_initial_balance = user.balance if user.balance is not None else 0.0
-
-        # This is a simplified refund logic. A real implementation would be more complex.
-        # For now, we'll just reopen any invoices paid by this amount.
-        # A more robust solution would track which payment paid which invoice.
-        paid_invoices = invoice_crud.get_paid_invoices_by_client(session, cancelled_payment.client_id)
-        refund_amount = cancelled_payment.amount
-
-        for invoice in sorted(paid_invoices, key=lambda i: i.paid_at, reverse=True):
-            if refund_amount <= 0:
-                break
-            if invoice.amount <= refund_amount:
-                invoice_crud.mark_invoice_as_unpaid(session, invoice.id)
-                refund_amount -= invoice.amount
-        
-        # Update user balance after processing refunds
-        user.balance = user_initial_balance + cancelled_payment.amount - refund_amount # Recalculate based on actual refund
-        session.add(user)
-        session.flush()
-
-        # Create cancellation history record
+        # 5. Record Cancellation History
         cancellation_history = PaymentHistory(
             client_id=cancelled_payment.client_id,
             payment_id=cancelled_payment.id,
             operation_type=OperationType.CANCELLATION,
-            amount=-cancelled_payment.amount, # Negative amount for refund
+            amount=-payment_to_cancel.amount,
             balance_before=user_initial_balance,
             balance_after=user.balance,
             description=cancellation_reason,
             created_by_id=cancelled_by_id
         )
         session.add(cancellation_history)
+
+        # 6. Flush User Changes
+        session.add(user)
         session.flush()
 
         return cancelled_payment
@@ -240,7 +236,7 @@ class FinancialService:
         description: Optional[str] = None,
         is_auto_renewal: bool = False,
     ) -> Invoice:
-        client = user_crud.get_user(self.db, client_id)
+        client = user_crud.get_user_by_id(self.db, client_id)
         if not client:
             raise ValueError("Client not found")
         
@@ -271,7 +267,7 @@ class FinancialService:
         amount: float,
         description: Optional[str] = None,
     ) -> Invoice:
-        client = user_crud.get_user(self.db, client_id)
+        client = user_crud.get_user_by_id(self.db, client_id)
         if not client:
             raise ValueError("Client not found")
 
@@ -301,7 +297,7 @@ class FinancialService:
 
             if invoice.status == InvoiceStatus.PAID:
                 # Revert payment logic (simplified)
-                user = user_crud.get_user(session, invoice.client_id)
+                user = user_crud.get_user_by_id(session, invoice.client_id)
                 if user:
                     user_balance = user.balance if user.balance is not None else 0.0
                     user_crud.update_user(session, user.id, UserUpdate(balance=user_balance + invoice.amount))

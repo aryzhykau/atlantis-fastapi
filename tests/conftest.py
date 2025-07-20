@@ -10,47 +10,40 @@ from app.main import app
 from app.database import Base
 from app.dependencies import get_db
 from app.models.user import UserRole
-from app.models import (
-    User,
-    TrainingType,
-    Subscription,
-    Student,
-    StudentSubscription,
-    Payment,
-    Invoice,
-    InvoiceStatus,
-    PaymentHistory,
-    InvoiceType,
-    RealTraining,
-    RealTrainingStudent
-)
+from app.models.user import User, UserRole
+from app.models.student import Student
+from app.models.training_type import TrainingType
+from app.models.subscription import Subscription, StudentSubscription
+from app.models.payment import Payment
+from app.models.invoice import Invoice, InvoiceStatus, InvoiceType
+from app.models.payment_history import PaymentHistory
+from app.models.real_training import RealTraining, RealTrainingStudent
+
 from app.models.real_training import AttendanceStatus
 from app.auth.jwt_handler import create_access_token
 
 # URL для тестовой базы данных (SQLite в оперативной памяти)
 DATABASE_URL = "sqlite:///./test_database.db"
 
-# Глобальная переменная для отслеживания первого теста
-_first_test = True
+@pytest.fixture(scope="session")
+def engine():
+    """Provides a SQLAlchemy engine for the test database."""
+    eng = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=eng)
+    yield eng
+    Base.metadata.drop_all(bind=eng)
+    eng.dispose()
+    if os.path.exists("test_database.db"):
+        os.remove("test_database.db")
 
 @pytest.fixture(scope="function")
-def db_session():
-    """
-    Фикстура для работы с одной общей сессией базы данных внутри каждого теста.
-    """
-    global _first_test
-    
-    # Удаляем файл базы данных только перед первым тестом
-    if _first_test and os.path.exists("test_database.db"):
-        os.remove("test_database.db")
-        _first_test = False
+def db_session(engine):
+    """Provides a transactional database session for each test."""
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
 
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-    Base.metadata.create_all(bind=engine)
-
-    session = TestingSessionLocal()
+    # Add test admin user
     test_user = User(
         first_name="Andrei",
         last_name="Ryzhykau",
@@ -61,16 +54,15 @@ def db_session():
         is_authenticated_with_google=True,
     )
     session.add(test_user)
-    session.commit()
+    session.flush() # Flush the admin user creation
     session.refresh(test_user)
 
     try:
-        admin = session.query(User).filter(User.email == "rorychan0697@gmail.com").first()
-        if admin:
-            yield session
+        yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine)
+        transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture

@@ -95,9 +95,18 @@ def get_real_trainings(
 
 def get_real_training(db: Session, training_id: int) -> Optional[RealTraining]:
     """
-    Получение тренировки по ID
+    Получение тренировки по ID с загрузкой связанных студентов и их данных.
     """
-    return db.query(RealTraining).filter(RealTraining.id == training_id).first()
+    return (
+        db.query(RealTraining)
+        .options(
+            selectinload(RealTraining.students).selectinload(RealTrainingStudent.student).selectinload(Student.client),
+            joinedload(RealTraining.trainer),
+            joinedload(RealTraining.training_type),
+        )
+        .filter(RealTraining.id == training_id)
+        .first()
+    )
 
 
 def get_real_trainings_by_date(db: Session, date: date) -> List[RealTraining]:

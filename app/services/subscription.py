@@ -23,6 +23,7 @@ from app.schemas.invoice import InvoiceCreate
 
 from app.database import transactional
 from app.services.financial import FinancialService
+from app.services.student_service import StudentService
 from app.errors.subscription_errors import (
     SubscriptionError,
     SubscriptionNotFound,
@@ -37,6 +38,7 @@ class SubscriptionService:
     def __init__(self, db: Session):
         self.db = db
         self.financial_service = FinancialService(db)
+        self.student_service = StudentService()
 
     # --- Public Methods (Transactional) ---
 
@@ -164,7 +166,7 @@ class SubscriptionService:
         # Call the financial service method
         self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
         
-        student_crud.update_student_active_subscription(session, student_id, subscription_id)
+        self.student_service.update_active_subscription_id(session, student)
         session.refresh(student_subscription)
         
         return student_subscription

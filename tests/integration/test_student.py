@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.models import Student, User, UserRole, Subscription, RealTrainingStudent, TrainingType
-from app.crud.student import get_student_by_id, get_students, get_students_by_client_id
+from app.crud.student import get_student_by_id, get_all_students, get_students_by_client_id
 
 student = {
     "first_name": "string",
