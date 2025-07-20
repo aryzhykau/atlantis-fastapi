@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from datetime import date, datetime
 from enum import Enum
 from app.schemas.student import StudentCreateWithoutClient
@@ -11,7 +11,7 @@ class UserRole(str, Enum):
     ADMIN = "ADMIN"
 
 
-# Общая базовая схема (поля для всех пользователей)
+# General base schema (fields for all users)
 class UserBase(BaseModel):
     id: int
     first_name: str
@@ -28,7 +28,7 @@ class UserBase(BaseModel):
 class ClientCreate(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=50)
     last_name: str = Field(..., min_length=2, max_length=50)
-    date_of_birth: date = Field(..., description="Дата рождения")
+    date_of_birth: date = Field(..., description="Date of birth")
     is_student: bool = False
     email: EmailStr
     phone: str = Field(..., min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
@@ -39,16 +39,16 @@ class ClientCreate(BaseModel):
     @classmethod
     def validate_birth_date(cls, v: date) -> date:
         if v > date.today():
-            raise ValueError('Дата рождения не может быть в будущем')
+            raise ValueError('Date of birth cannot be in the future')
         return v
 
     @field_validator('first_name', 'last_name')
     @classmethod
     def validate_names(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError('Поле не может быть пустым')
-        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
-            raise ValueError('Имя может содержать только буквы, пробелы и дефис')
+            raise ValueError('Field cannot be empty')
+        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+', v):
+            raise ValueError('Name can only contain letters, spaces, and hyphens')
         return v.strip()
 
 
@@ -66,7 +66,7 @@ class ClientUpdate(BaseModel):
     @classmethod
     def validate_birth_date(cls, v: date | None) -> date | None:
         if v is not None and v > date.today():
-            raise ValueError('Дата рождения не может быть в будущем')
+            raise ValueError('Date of birth cannot be in the future')
         return v
 
     @field_validator('first_name', 'last_name')
@@ -74,9 +74,9 @@ class ClientUpdate(BaseModel):
     def validate_names(cls, v: str | None) -> str | None:
         if v is not None:
             if not v.strip():
-                raise ValueError('Поле не может быть пустым')
-            if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
-                raise ValueError('Имя может содержать только буквы, пробелы и дефис')
+                raise ValueError('Field cannot be empty')
+            if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+', v):
+                raise ValueError('Name can only contain letters, spaces, and hyphens')
             return v.strip()
         return v
 
@@ -99,23 +99,23 @@ class TrainerCreate(BaseModel):
     @classmethod
     def validate_phone(cls, v: str) -> str:
         if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
-            raise ValueError('Неверный формат номера телефона. Должен содержать от 10 до 15 цифр')
+            raise ValueError('Invalid phone number format. Must contain 10 to 15 digits')
         return v
 
     @field_validator('date_of_birth')
     @classmethod
     def validate_birth_date(cls, v: date) -> date:
         if v > date.today():
-            raise ValueError('Дата рождения не может быть в будущем')
+            raise ValueError('Date of birth cannot be in the future')
         return v
 
     @field_validator('first_name', 'last_name')
     @classmethod
     def validate_names(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError('Поле не может быть пустым')
-        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+$', v):
-            raise ValueError('Имя может содержать только буквы, пробелы и дефис')
+            raise ValueError('Field cannot be empty')
+        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+', v):
+            raise ValueError('Name can only contain letters, spaces, and hyphens')
         return v.strip()
 
     @model_validator(mode='after')
@@ -125,9 +125,9 @@ class TrainerCreate(BaseModel):
 
         if is_fixed:
             if salary is None or salary == 0:
-                raise ValueError('Фиксированная зарплата не может быть нулевой')
+                raise ValueError('Fixed salary cannot be zero')
         if salary is not None and salary < 0:
-            raise ValueError('Зарплата не может быть отрицательной')
+            raise ValueError('Salary cannot be negative')
         return self
 
 class TrainerUpdate(BaseModel):
@@ -166,7 +166,7 @@ class ClientStatusResponse(BaseModel):
     id: int
     is_active: bool
     deactivation_date: datetime | None
-    affected_students_count: int | None = Field(None, description="Количество затронутых студентов при каскадном изменении")
+    affected_students_count: int | None = Field(None, description="Number of affected students in case of cascading changes")
 
     model_config = {"from_attributes": True}
 
@@ -174,12 +174,12 @@ class StudentStatusResponse(BaseModel):
     id: int
     is_active: bool
     deactivation_date: datetime | None
-    client_status: bool = Field(..., description="Статус родительского клиента")
+    client_status: bool = Field(..., description="Parent client status")
 
     model_config = {"from_attributes": True}
 
 class UserListResponse(BaseModel):
-    """Схема для списка пользователей в автокомплите"""
+    """Schema for user list in autocomplete"""
     id: int
     first_name: str
     last_name: str
@@ -187,3 +187,55 @@ class UserListResponse(BaseModel):
     role: UserRole
 
     model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    first_name: str | None = Field(None, min_length=2, max_length=50)
+    last_name: str | None = Field(None, min_length=2, max_length=50)
+    date_of_birth: date | None = None
+    email: EmailStr | None = None
+    phone: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    balance: float | None = Field(None, ge=0)
+    is_active: bool | None = None
+    salary: float | None = Field(None, ge=0)
+    is_fixed_salary: bool | None = None
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_birth_date(cls, v: date | None) -> date | None:
+        if v is not None and v > date.today():
+            raise ValueError('Date of birth cannot be in the future')
+        return v
+
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v: str | None) -> str | None:
+        if v is not None:
+            if not v.strip():
+                raise ValueError('Field cannot be empty')
+            if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+', v):
+                raise ValueError('Name can only contain letters, spaces, and hyphens')
+            return v.strip()
+        return v
+
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
+                raise ValueError('Invalid phone number format. Must contain 10 to 15 digits')
+            return v
+        return v
+
+    @model_validator(mode='after')
+    def validate_salary(self) -> 'UserUpdate':
+        salary = self.salary
+        is_fixed = self.is_fixed_salary
+
+        if is_fixed is not None and is_fixed:
+            if salary is None or salary == 0:
+                raise ValueError('Fixed salary cannot be zero')
+        if salary is not None and salary < 0:
+            raise ValueError('Salary cannot be negative')
+        return self

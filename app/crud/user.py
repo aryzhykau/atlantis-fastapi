@@ -1,32 +1,76 @@
+from typing import List, Optional
 from sqlalchemy.orm import Session
-from app.models import User
+from app.models import User, UserRole
+from app.schemas.user import UserUpdate, ClientCreate as UserCreate
 
 
-# Получить пользователя по ID
-def get_user_by_id(db: Session, user_id: int):
+def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
 
 
-# Получить пользователя по email
-def get_user_by_email(db: Session, email: str):
+def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    """
+    Get a user by email
+    """
     return db.query(User).filter(User.email == email).first()
 
 
-# Получить всех пользователей для автокомплита
-def get_all_users(db: Session):
+def get_all_users(db: Session) -> List[User]:
+    """
+    Get all users for autocomplete
+    """
     return db.query(User).order_by(User.first_name, User.last_name).all()
 
 
-# Удалить пользователя
-def delete_user(db: Session, user_id: int):
+def get_active_users(db: Session) -> List[User]:
+    """
+    Get active users
+    """
+    return db.query(User).filter(User.is_active == True).order_by(User.first_name, User.last_name).all()
+
+
+def get_users_by_role(db: Session, role: str) -> List[User]:
+    """
+    Get users by role
+    """
+    return db.query(User).filter(User.role == role).order_by(User.first_name, User.last_name).all()
+
+
+def create_user(db: Session, user: UserCreate) -> User:
+    db_user = User(
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        role=UserRole.CLIENT,
+        phone=user.phone,
+        date_of_birth=user.date_of_birth,
+        whatsapp_number=user.whatsapp_number,
+        is_authenticated_with_google=True,
+        balance=0
+    )
+    db.add(db_user)
+    return db_user
+
+
+def update_user(db: Session, user_id: int, user_in: UserUpdate) -> Optional[User]:
+    """
+    Update an existing user
+    """
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+
+    update_data = user_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    return user
+
+
+def delete_user(db: Session, user_id: int) -> Optional[User]:
+    """
+    Delete a user by ID
+    """
     user = db.query(User).filter(User.id == user_id).first()
     if user:
         db.delete(user)
-        db.commit()
-        return True
-    return False
-
-
-# Получить текущего пользователя
-def get_user_me(db: Session, user_id: int):
-    return db.query(User).filter(User.id == user_id).first()
+    return user

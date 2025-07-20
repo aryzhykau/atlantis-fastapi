@@ -23,9 +23,25 @@ from app.endpoints.invoice import router as invoice_router
 from app.endpoints.payment import router as payment_router
 from app.endpoints.cron import router as cron_router
 
-logging.basicConfig(level=logging.DEBUG)
-# logging.getLogger("sqlalchemy").setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG) # Ensure basic config is debug
+
+# Create a logger for the application
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create a console handler and set its level to DEBUG
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+# Create a formatter and add it to the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+
+# Add the handler to the logger
+logger.addHandler(ch)
+
+logger.info("Application started and logger configured.") # Test log message
+
 
 
 app = FastAPI(

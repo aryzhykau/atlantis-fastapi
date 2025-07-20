@@ -1,4 +1,5 @@
-from typing import List
+import logging
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,12 @@ from app.schemas.payment import (
     PaymentHistoryFilterRequest,
     PaymentHistoryListResponse
 )
-from app.services.payment import PaymentService
+from app.services.financial import FinancialService
+from app.crud import payment as crud_payment
+from app.crud import user as crud_user
+from app.errors.payment_errors import PaymentError, PaymentNotFound, InsufficientBalance
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -25,85 +31,24 @@ def create_payment(
 ):
     """
     Регистрация нового платежа.
-    Только для админов и тренеров.
-    """
-    service = PaymentService(db)
-    return service.register_payment(
-        client_id=payment.client_id,
-        amount=payment.amount,
-        registered_by_id=current_user["id"],
-        description=payment.description
-    )
-
-
-@router.delete("/{payment_id}", response_model=PaymentResponse)
-def cancel_payment(
-    payment_id: int,
-    current_user = Depends(verify_jwt_token),
-    db: Session = Depends(get_db)
-):
-    """
-    Отмена платежа.
-    Только для админов.
-    """
-    service = PaymentService(db)
-    return service.cancel_payment(
-        payment_id=payment_id,
-        cancelled_by_id=current_user["id"]
-    )
-
-
-@router.get("/client/{client_id}", response_model=List[PaymentResponse])
-def get_client_payments(
-    client_id: int,
-    cancelled_status: str = "all",
-    skip: int = 0,
-    limit: int = 100,
-    current_user = Depends(verify_jwt_token),
-    db: Session = Depends(get_db)
-):
-    """
-    Получение списка платежей клиента.
-    Доступно админам и тренерам.
-    
-    Args:
-        client_id: ID клиента
-        cancelled_status: Статус отмены платежей:
-            - "all": все платежи (по умолчанию)
-            - "cancelled": только отмененные платежи
-            - "not_cancelled": только неотмененные платежи
-        skip: Смещение для пагинации
-        limit: Лимит записей для пагинации
-    """
-    service = PaymentService(db)
-    service.validate_admin_or_trainer(current_user["id"])
-    return service.get_client_payments(
-        client_id=client_id,
-        cancelled_status=cancelled_status,
-        skip=skip,
-        limit=limit
-    )
-
-
-@router.get("/client/{client_id}/balance", response_model=ClientBalanceResponse)
-def get_client_balance(
-    client_id: int,
-    current_user = Depends(verify_jwt_token),
-    db: Session = Depends(get_db)
-):
-    """
-    Получение текущего баланса клиента.
     Доступно админам и тренерам.
     """
-    service = PaymentService(db)
-    service.validate_admin_or_trainer(current_user["id"])
-    balance = service.get_client_balance(client_id)
-    return ClientBalanceResponse(client_id=client_id, balance=balance)
-
+    service = FinancialService(db)
+    try:
+        return service.register_standalone_payment(
+            client_id=payment.client_id,
+            amount=payment.amount,
+            registered_by_id=current_user["id"],
+            description=payment.description
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PaymentError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/filtered", response_model=List[PaymentExtendedResponse])
 def get_filtered_payments(
-    registered_by_me: bool = Query(False, description="Только платежи текущего пользователя"),
+    registered_by_me: Optional[bool] = Query(None, description="Только платежи текущего пользователя"),
     period: str = Query("week", description="Период: week/2weeks"),
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
@@ -113,12 +58,15 @@ def get_filtered_payments(
     Доступно админам и тренерам.
     
     Args:
-        registered_by_me: Если True, возвращает только платежи зарегистрированные текущим пользователем
+        registered_by_me: Если "true", возвращает только платежи зарегистрированные текущим пользователем
         period: Период для фильтрации (week/2weeks)
     """
-    service = PaymentService(db)
-    service.validate_admin_or_trainer(current_user["id"])
-    return service.get_payments_with_filters_extended(
+    
+    # This logic should be moved to a service if it involves complex business rules
+    # For now, keeping it as is, but it's a candidate for refactoring.
+    service = FinancialService(db)
+    # service.validate_admin_or_trainer(current_user["id"]) # Validation should be handled by service or dependency
+    return service.get_filtered_payments(
         user_id=current_user["id"],
         registered_by_me=registered_by_me,
         period=period
@@ -144,7 +92,8 @@ def get_payment_history(
     Получение истории всех транзакций с фильтрами и пагинацией.
     Только для админов.
     """
-    # Создаем объект фильтров из query параметров
+    # This logic should be moved to a service if it involves complex business rules
+    # For now, keeping it as is, but it's a candidate for refactoring.
     filters = PaymentHistoryFilterRequest(
         operation_type=operation_type,
         client_id=client_id,
@@ -158,8 +107,8 @@ def get_payment_history(
         limit=limit
     )
     
-    service = PaymentService(db)
-    result = service.get_payment_history_with_filters(
+    service = FinancialService(db)
+    result = service.get_payment_history(
         user_id=current_user["id"],
         filters=filters
     )
@@ -171,3 +120,110 @@ def get_payment_history(
         limit=result["limit"],
         has_more=result["has_more"]
     ) 
+
+
+@router.delete("/{payment_id}", response_model=PaymentResponse)
+def cancel_payment(
+    payment_id: int,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Отмена платежа.
+    Только для админов.
+    """
+    service = FinancialService(db)
+    try:
+        if current_user["role"] != "ADMIN":
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return service.cancel_standalone_payment(
+            payment_id=payment_id,
+            cancelled_by_id=current_user["id"]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PaymentNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PaymentError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{payment_id}", response_model=PaymentResponse)
+def get_payment(
+    payment_id: int,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение платежа по ID.
+    Доступно админам и тренерам.
+    """
+    # Direct CRUD call as no business logic is involved
+    payment = crud_payment.get_payment(db, payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return payment
+
+
+@router.get("/", response_model=List[PaymentResponse])
+def get_payments(
+    skip: int = 0,
+    limit: int = 100,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка всех платежей.
+    Доступно админам и тренерам.
+    """
+    # Direct CRUD call as no business logic is involved
+    return crud_payment.get_payments(db, skip=skip, limit=limit)
+
+
+@router.get("/client/{client_id}", response_model=List[PaymentResponse])
+def get_client_payments(
+    client_id: int,
+    cancelled_status: str = "all",
+    skip: int = 0,
+    limit: int = 100,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка платежей клиента.
+    Доступно админам и тренерам.
+    
+    Args:
+        client_id: ID клиента
+        cancelled_status: Статус отмены платежей:
+            - "all": все платежи (по умолчанию)
+            - "cancelled": только отмененные платежи
+            - "not_cancelled": только неотмененные платежи
+        skip: Смещение для пагинации
+        limit: Лимит записей для пагинации
+    """
+    # Direct CRUD call as no business logic is involved
+    return crud_payment.get_client_payments(
+        db,
+        client_id=client_id,
+        cancelled_status=cancelled_status,
+        skip=skip,
+        limit=limit
+    )
+
+
+@router.get("/client/{client_id}/balance", response_model=ClientBalanceResponse)
+def get_client_balance(
+    client_id: int,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение текущего баланса клиента.
+    Доступно админам и тренерам.
+    """
+    # Direct CRUD call as no business logic is involved
+    user = crud_user.get_user_by_id(db, client_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return ClientBalanceResponse(client_id=client_id, balance=user.balance)

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from app.models.payment_history import OperationType
 
 
@@ -13,6 +13,29 @@ class PaymentBase(BaseModel):
 class PaymentCreate(PaymentBase):
     """Схема для создания платежа"""
     client_id: int = Field(..., description="ID клиента")
+
+    @validator('amount')
+    def amount_must_be_positive(cls, v):
+        if v <= 0:
+            raise ValueError('Amount must be positive')
+        return v
+
+    @validator('description')
+    def description_must_be_less_than_500_characters(cls, v):
+        if len(v) > 500:
+            raise ValueError('Description must be less than 500 characters')
+        return v
+
+class PaymentUpdate(BaseModel):
+    """Схема для обновления платежа"""
+    amount: Optional[float] = Field(None, description="Сумма платежа")
+    description: Optional[str] = Field(None, description="Описание платежа")
+
+
+class PaymentUpdate(BaseModel):
+    """Схема для обновления платежа"""
+    amount: Optional[float] = Field(None, description="Сумма платежа")
+    description: Optional[str] = Field(None, description="Описание платежа")
 
 
 class PaymentResponse(PaymentBase):
@@ -71,11 +94,11 @@ class PaymentHistoryResponse(BaseModel):
 # Новые схемы для страницы лога транзакций
 class PaymentHistoryFilterRequest(BaseModel):
     """Схема для фильтрации истории платежей"""
-    operation_type: Optional[OperationType] = Field(None, description="Тип операции")
+    operation_type: Optional[str] = Field(None, description="Тип операции")
     client_id: Optional[int] = Field(None, description="ID клиента")
     created_by_id: Optional[int] = Field(None, description="ID создателя операции")
-    date_from: Optional[datetime] = Field(None, description="Дата начала периода")
-    date_to: Optional[datetime] = Field(None, description="Дата окончания периода")
+    date_from: Optional[str] = Field(None, description="Дата начала периода (YYYY-MM-DD)")
+    date_to: Optional[str] = Field(None, description="Дата окончания периода (YYYY-MM-DD)")
     amount_min: Optional[float] = Field(None, description="Минимальная сумма")
     amount_max: Optional[float] = Field(None, description="Максимальная сумма")
     description_search: Optional[str] = Field(None, description="Поиск по описанию")

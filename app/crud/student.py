@@ -1,168 +1,49 @@
+import logging
 from sqlalchemy.orm import Session
 from app.models.student import Student
-from app.models.user import User
-from app.models.subscription import StudentSubscription
 from app.schemas.student import StudentCreate, StudentUpdate
-from datetime import datetime
-from sqlalchemy import and_
 
+logger = logging.getLogger(__name__)
 
-# Получить студента по ID
 def get_student_by_id(db: Session, student_id: int) -> Student | None:
-    """Получает студента по его ID."""
-    student = db.query(Student).filter(Student.id == student_id).first()
-    
-    if student:
-        _update_active_subscription_id(student, db)
-        db.commit()
-    
-    return student
+    """Retrieves a student by their ID."""
+    return db.query(Student).filter(Student.id == student_id).first()
 
 
-def _update_active_subscription_id(student: Student, db: Session) -> None:
-    """
-    Обновляет active_subscription_id студента, проверяя статус абонемента.
-    Если текущий абонемент истёк или заморожен, ищет активный абонемент.
-    """
-    if not student.active_subscription_id:
-        return
-    
-    # Проверяем статус текущего активного абонемента
-    current_subscription = (
-        db.query(StudentSubscription)
-        .filter(
-            and_(
-                StudentSubscription.student_id == student.id,
-                StudentSubscription.subscription_id == student.active_subscription_id
-            )
-        )
-        .first()
-    )
-    
-    if not current_subscription or current_subscription.status in ["expired", "frozen"]:
-        # Ищем активный абонемент
-        active_subscription = (
-            db.query(StudentSubscription)
-            .filter(
-                and_(
-                    StudentSubscription.student_id == student.id,
-                    StudentSubscription.status == "active"
-                )
-            )
-            .order_by(StudentSubscription.end_date.desc())
-            .first()
-        )
-        
-        if active_subscription:
-            student.active_subscription_id = active_subscription.subscription_id
-        else:
-            student.active_subscription_id = None
-
-
-# Получить всех студентов
-def get_students(db: Session) -> list[Student]:
-    """Получает полный список студентов."""
-    students = db.query(Student).all()
-    
-    # Обновляем active_subscription_id для каждого студента
-    for student in students:
-        _update_active_subscription_id(student, db)
-    
-    db.commit()
-    return students
-
-
-# Получить студентов по ID клиента
 def get_students_by_client_id(db: Session, client_id: int) -> list[Student]:
-    """Получает список всех студентов, связанных с указанным клиентом."""
-    students = db.query(Student).filter(Student.client_id == client_id).order_by(Student.first_name, Student.last_name).all()
-    
-    # Обновляем active_subscription_id для каждого студента
-    for student in students:
-        _update_active_subscription_id(student, db)
-    
-    db.commit()
-    return students
+    """Retrieves all students associated with a specific client ID."""
+    return db.query(Student).filter(Student.client_id == client_id).order_by(Student.first_name, Student.last_name).all()
 
 
-# Создать нового студента
-def create_student(db: Session, student_data: StudentCreate) -> Student:
-    """Создает нового студента."""
-    # Проверяем, существует ли клиент с данным client_id
-    client = db.query(User).filter(User.id == student_data.client_id).first()
-    if not client:
-        raise ValueError(f"Клиент с ID {student_data.client_id} не найден.")
+def get_all_students(db: Session) -> list[Student]:
+    """Retrieves all students from the database."""
+    return db.query(Student).all()
 
-    # Создаем объект студента
+
+def create_student(db: Session, student_data: StudentCreate, client_id: int) -> Student:
+    """Creates a new student associated with a client without committing."""
     new_student = Student(
         first_name=student_data.first_name,
         last_name=student_data.last_name,
         date_of_birth=student_data.date_of_birth,
-        client_id=student_data.client_id,
+        client_id=client_id,
+        is_active=True
     )
-
-    # Сохраняем запись в базе данных
+    logger.info(f"new student name: {new_student.first_name} {new_student.last_name}, client_id: {new_student.client_id}")
     db.add(new_student)
-    db.commit()
-    db.refresh(new_student)
-
     return new_student
 
 
-# Обновить студента
 def update_student(db: Session, student_id: int, student_data: StudentUpdate) -> Student | None:
-    """Обновляет информацию о студенте по его ID."""
-    # Получаем студента из базы данных
-    student = db.query(Student).filter(Student.id == student_id).first()
-
+    """Updates a student's data without committing."""
+    student = get_student_by_id(db, student_id)
     if not student:
         return None
 
-    # Обновляем поля студента, если они присутствуют в student_data
-    if student_data.first_name is not None:
-        student.first_name = student_data.first_name
-    if student_data.last_name is not None:
-        student.last_name = student_data.last_name
-    if student_data.date_of_birth is not None:
-        student.date_of_birth = student_data.date_of_birth
-    if student_data.client_id is not None:
-        # Проверяем существование нового клиента
-        client = db.query(User).filter(User.id == student_data.client_id).first()
-        if not client:
-            raise ValueError(f"Клиент с ID {student_data.client_id} не найден.")
-        student.client_id = student_data.client_id
-
-    db.commit()
-    db.refresh(student)
+    update_data = student_data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(student, key, value)
 
     return student
-
-
-def update_student_status(db: Session, student_id: int, is_active: bool) -> Student:
-    """
-    Обновляет статус студента с проверкой статуса родительского клиента.
-    """
-    student = db.query(Student).filter(Student.id == student_id).first()
-    if not student:
-        raise ValueError("Студент не найден")
-    
-    # Проверка статуса клиента при активации студента
-    if is_active:
-        client = db.query(User).filter(User.id == student.client_id).first()
-        if not client:
-            raise ValueError("Клиент не найден")
-        if not client.is_active:
-            raise ValueError("Невозможно активировать студента: родительский клиент неактивен")
-    
-    student.is_active = is_active
-    student.deactivation_date = datetime.now() if not is_active else None
-    
-    try:
-        db.commit()
-        db.refresh(student)
-        return student
-    except Exception as e:
-        db.rollback()
-        raise e
 
 

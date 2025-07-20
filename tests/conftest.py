@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta, time, timezone
 import os
 
 import pytest
@@ -10,47 +10,40 @@ from app.main import app
 from app.database import Base
 from app.dependencies import get_db
 from app.models.user import UserRole
-from app.models import (
-    User,
-    TrainingType,
-    Subscription,
-    Student,
-    StudentSubscription,
-    Payment,
-    Invoice,
-    InvoiceStatus,
-    PaymentHistory,
-    InvoiceType,
-    RealTraining,
-    RealTrainingStudent
-)
+from app.models.user import User, UserRole
+from app.models.student import Student
+from app.models.training_type import TrainingType
+from app.models.subscription import Subscription, StudentSubscription
+from app.models.payment import Payment
+from app.models.invoice import Invoice, InvoiceStatus, InvoiceType
+from app.models.payment_history import PaymentHistory
+from app.models.real_training import RealTraining, RealTrainingStudent
+
 from app.models.real_training import AttendanceStatus
 from app.auth.jwt_handler import create_access_token
 
 # URL для тестовой базы данных (SQLite в оперативной памяти)
 DATABASE_URL = "sqlite:///./test_database.db"
 
-# Глобальная переменная для отслеживания первого теста
-_first_test = True
+@pytest.fixture(scope="session")
+def engine():
+    """Provides a SQLAlchemy engine for the test database."""
+    eng = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=eng)
+    yield eng
+    Base.metadata.drop_all(bind=eng)
+    eng.dispose()
+    if os.path.exists("test_database.db"):
+        os.remove("test_database.db")
 
 @pytest.fixture(scope="function")
-def db_session():
-    """
-    Фикстура для работы с одной общей сессией базы данных внутри каждого теста.
-    """
-    global _first_test
-    
-    # Удаляем файл базы данных только перед первым тестом
-    if _first_test and os.path.exists("test_database.db"):
-        os.remove("test_database.db")
-        _first_test = False
+def db_session(engine):
+    """Provides a transactional database session for each test."""
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
 
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-    Base.metadata.create_all(bind=engine)
-
-    session = TestingSessionLocal()
+    # Add test admin user
     test_user = User(
         first_name="Andrei",
         last_name="Ryzhykau",
@@ -61,16 +54,15 @@ def db_session():
         is_authenticated_with_google=True,
     )
     session.add(test_user)
-    session.commit()
+    session.flush() # Flush the admin user creation
     session.refresh(test_user)
 
     try:
-        admin = session.query(User).filter(User.email == "rorychan0697@gmail.com").first()
-        if admin:
-            yield session
+        yield session
     finally:
         session.close()
-        Base.metadata.drop_all(bind=engine)
+        transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture
@@ -164,42 +156,7 @@ def test_student(db_session, test_client):
     return student
 
 
-@pytest.fixture
-def test_subscription(db_session):
-    """
-    Создает тестовый абонемент в базе данных.
-    """
-    subscription = Subscription(
-        name="Test Subscription",
-        price=100.0,
-        number_of_sessions=8,
-        validity_days=30,
-        is_active=True
-    )
-    db_session.add(subscription)
-    db_session.commit()
-    db_session.refresh(subscription)
-    return subscription
 
-
-@pytest.fixture
-def test_student_subscription(db_session, test_student, test_subscription):
-    """
-    Создает тестовую подписку студента в базе данных.
-    """
-    student_subscription = StudentSubscription(
-        student_id=test_student.id,
-        subscription_id=test_subscription.id,
-        start_date=datetime.utcnow(),
-        end_date=datetime.utcnow() + timedelta(days=30),
-        sessions_left=test_subscription.number_of_sessions,
-        transferred_sessions=0,
-        is_auto_renew=False
-    )
-    db_session.add(student_subscription)
-    db_session.commit()
-    db_session.refresh(student_subscription)
-    return student_subscription
 
 
 @pytest.fixture
@@ -479,6 +436,20 @@ def api_key_headers(cron_api_key):
 
 
 @pytest.fixture
+def auth_headers_trainer(client, test_trainer):
+    """
+    Возвращает заголовки авторизации для тренера.
+    """
+    from app.auth.jwt_handler import create_access_token
+    from app.schemas.user import UserRole
+    
+    token = create_access_token(
+        data={"sub": str(test_trainer.id), "role": UserRole.TRAINER, "id": test_trainer.id}
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
 def test_student_training(db_session, test_tomorrow_training, test_student, test_student_subscription):
     """
     Создает связь студента с тренировкой (с абонементом)
@@ -730,24 +701,7 @@ def test_real_training_student_cancelled_training(db_session, test_cancelled_tra
 
 
 # Фикстуры для студентов с истекшими абонементами
-@pytest.fixture
-def test_student_subscription_expired(db_session, test_student, test_subscription):
-    """
-    Создает истекший абонемент студента
-    """
-    student_subscription = StudentSubscription(
-        student_id=test_student.id,
-        subscription_id=test_subscription.id,
-        start_date=datetime.utcnow() - timedelta(days=35),
-        end_date=datetime.utcnow() - timedelta(days=5),
-        sessions_left=0,
-        transferred_sessions=0,
-        is_auto_renew=False
-    )
-    db_session.add(student_subscription)
-    db_session.commit()
-    db_session.refresh(student_subscription)
-    return student_subscription
+
 
 
 @pytest.fixture
@@ -815,5 +769,21 @@ def test_student_training_penalty_cancellation_with_subscription(db_session, tes
     db_session.commit()
     db_session.refresh(student_training)
     return student_training
+
+
+# Импортируем фикстуры для подписок
+from .fixtures.subscription_fixtures import (
+    test_subscription,
+    test_student_subscription,
+    test_auto_renewal_subscription,
+    test_student_subscription_expired,
+    test_frozen_subscription,
+    test_expired_frozen_subscription,
+    test_subscription_with_transferred_sessions,
+    test_inactive_subscription
+)
+
+
+
 
 

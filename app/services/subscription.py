@@ -1,61 +1,56 @@
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from datetime import datetime, timezone, timedelta, date
+from typing import List, Optional
 
-from fastapi import HTTPException
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
+from app.crud import subscription as crud
+from app.crud import student as student_crud
 from app.models import (
-    Student,
     Subscription,
+    Student,
     StudentSubscription,
-    Invoice,
-    InvoiceType,
     InvoiceStatus,
-    User,
-    UserRole
+    InvoiceType
+)
+from app.schemas.subscription import (
+    SubscriptionCreate,
+    SubscriptionUpdate,
+    StudentSubscriptionCreate,
+    StudentSubscriptionUpdate
+)
+from app.schemas.invoice import InvoiceCreate
+
+from app.database import transactional
+from app.services.financial import FinancialService
+from app.services.student_service import StudentService
+from app.errors.subscription_errors import (
+    SubscriptionError,
+    SubscriptionNotFound,
+    SubscriptionNotActive,
+    SubscriptionAlreadyFrozen,
+    SubscriptionNotFrozen
 )
 
 logger = logging.getLogger(__name__)
 
-
 class SubscriptionService:
     def __init__(self, db: Session):
         self.db = db
+        self.financial_service = FinancialService(db)
+        self.student_service = StudentService()
 
-    def validate_admin(self, user_id: int) -> None:
-        """Проверка, что пользователь является админом или тренером"""
-        user = self.db.query(User).filter(User.id == user_id).first()
-        if not user or user.role is not UserRole.ADMIN:
-            raise HTTPException(
-                status_code=403,
-                detail="Only admins can manage subscriptions"
-            )
+    # --- Public Methods (Transactional) ---
 
-    def get_subscription(self, subscription_id: int) -> Optional[Subscription]:
-        """Получение абонемента по ID"""
-        return self.db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    def create_subscription(self, subscription_data: SubscriptionCreate) -> Subscription:
+        """Creates a new subscription type."""
+        with transactional(self.db) as session:
+            return crud.create_subscription(session, subscription_data)
 
-    def get_student_subscription(self, student_subscription_id: int) -> Optional[StudentSubscription]:
-        """Получение подписки студента по ID"""
-        return self.db.query(StudentSubscription).filter(StudentSubscription.id == student_subscription_id).first()
-
-    def get_active_student_subscriptions(self, student_id: int) -> List[StudentSubscription]:
-        """Получение активных подписок студента"""
-        today = datetime.utcnow()
-        return (
-            self.db.query(StudentSubscription)
-            .filter(
-                and_(
-                    StudentSubscription.student_id == student_id,
-                    StudentSubscription.start_date <= today,
-                    StudentSubscription.end_date >= today,
-                    ~StudentSubscription.status.in_(["expired", "frozen"])
-                )
-            )
-            .all()
-        )
+    def update_subscription(self, subscription_id: int, subscription_data: SubscriptionUpdate) -> Optional[Subscription]:
+        """Updates an existing subscription type."""
+        with transactional(self.db) as session:
+            return crud.update_subscription(session, subscription_id, subscription_data)
 
     def add_subscription_to_student(
         self,
@@ -64,81 +59,11 @@ class SubscriptionService:
         is_auto_renew: bool,
         created_by_id: int
     ) -> StudentSubscription:
-        """Добавление абонемента студенту"""
-        # Проверяем права
-        self.validate_admin(created_by_id)
-
-        # Получаем студента и абонемент
-        student = self.db.query(Student).filter(Student.id == student_id).first()
-        subscription = self.get_subscription(subscription_id)
-
-        if not student or not subscription:
-            raise HTTPException(status_code=404, detail="Student or subscription not found")
-
-        # Ищем предыдущий абонемент студента
-        previous_subscription = (
-            self.db.query(StudentSubscription)
-            .filter(
-                StudentSubscription.student_id == student_id,
-                StudentSubscription.end_date <= datetime.utcnow()
+        """Adds a subscription to a student, creating an associated invoice."""
+        with transactional(self.db) as session:
+            return self._add_subscription_to_student_logic(
+                session, student_id, subscription_id, is_auto_renew, created_by_id
             )
-            .order_by(StudentSubscription.end_date.desc())
-            .first()
-        )
-
-        # Определяем количество переносимых тренировок
-        transferred_sessions = 0
-        if previous_subscription and previous_subscription.sessions_left > 0:
-            # Переносим не более 3 тренировок
-            transferred_sessions = min(previous_subscription.sessions_left, 3)
-            # Обнуляем оставшиеся тренировки в старом абонементе
-            previous_subscription.sessions_left = 0
-            previous_subscription.transferred_sessions = 0
-
-        # Создаем подписку студента
-        start_date = datetime.utcnow()
-        end_date = start_date + timedelta(days=subscription.validity_days)
-
-        student_subscription = StudentSubscription(
-            student_id=student_id,
-            subscription_id=subscription_id,
-            start_date=start_date,
-            end_date=end_date,
-            is_auto_renew=is_auto_renew,
-            sessions_left=subscription.number_of_sessions + transferred_sessions,
-            transferred_sessions=transferred_sessions
-        )
-        self.db.add(student_subscription)
-        client = self.db.query(User).filter(User.id == student.client_id).first()
-        invoice_status = InvoiceStatus.UNPAID
-        current_balance = client.balance or 0.0
-        if current_balance >= subscription.price:
-            client.balance = current_balance - subscription.price
-            self.db.flush()
-            self.db.refresh(client)
-            invoice_status = InvoiceStatus.PAID
-
-
-        # Создаем инвойс для оплаты абонемента
-        invoice = Invoice(
-            client_id=student.client_id,
-            student_id=student_id,
-            subscription_id=subscription_id,
-            type=InvoiceType.SUBSCRIPTION,
-            amount=subscription.price,
-            description=f"Subscription: {subscription.name}",
-            status=invoice_status,
-            is_auto_renewal=False
-        )
-        self.db.add(invoice)
-        self.db.flush()
-        
-        student.active_subscription_id = subscription_id
-        self.db.add(student)
-        self.db.commit()
-        self.db.refresh(student_subscription)
-
-        return student_subscription
 
     def update_auto_renewal(
         self,
@@ -146,19 +71,9 @@ class SubscriptionService:
         is_auto_renew: bool,
         updated_by_id: int
     ) -> StudentSubscription:
-        """Обновление статуса автопродления"""
-        # Проверяем права
-        self.validate_admin(updated_by_id)
-
-        subscription = self.get_student_subscription(student_subscription_id)
-        if not subscription:
-            raise HTTPException(status_code=404, detail="Subscription not found")
-
-        subscription.is_auto_renew = is_auto_renew
-        self.db.commit()
-        self.db.refresh(subscription)
-
-        return subscription
+        """Updates the auto-renewal status of a student subscription."""
+        with transactional(self.db) as session:
+            return self._update_auto_renewal_logic(session, student_subscription_id, is_auto_renew, updated_by_id)
 
     def freeze_subscription(
         self,
@@ -167,167 +82,275 @@ class SubscriptionService:
         freeze_duration_days: int,
         updated_by_id: int
     ) -> StudentSubscription:
-        """Заморозка абонемента"""
-        # Проверяем права
-        self.validate_admin(updated_by_id)
-
-        subscription = self.get_student_subscription(student_subscription_id)
-        if not subscription:
-            raise HTTPException(status_code=404, detail="Subscription not found")
-
-        # Проверяем, что абонемент активен
-        if subscription.status != "active":
-            raise HTTPException(status_code=400, detail="Can only freeze active subscriptions")
-
-        # Устанавливаем даты заморозки
-        subscription.freeze_start_date = freeze_start_date
-        subscription.freeze_end_date = freeze_start_date + timedelta(days=freeze_duration_days)
-
-        # Пересчитываем дату окончания
-        subscription.end_date = subscription.computed_end_date
-
-        self.db.commit()
-        self.db.refresh(subscription)
-
-        logger.info(f"Subscription after freeze: {subscription.status}")
-        logger.info(f"Subscription after freeze: {subscription.freeze_start_date}")
-        logger.info(f"Subscription after freeze: {subscription.freeze_end_date}")
-      
-        return subscription
+        """Freezes a student subscription."""
+        with transactional(self.db) as session:
+            return self._freeze_subscription_logic(session, student_subscription_id, freeze_start_date, freeze_duration_days, updated_by_id)
 
     def unfreeze_subscription(
         self,
         student_subscription_id: int,
         updated_by_id: int
     ) -> StudentSubscription:
-        """Разморозка абонемента"""
-        # Проверяем права
-        self.validate_admin(updated_by_id)
+        """Unfreezes a student subscription."""
+        with transactional(self.db) as session:
+            return self._unfreeze_subscription_logic(session, student_subscription_id, updated_by_id)
 
-        subscription = self.get_student_subscription(student_subscription_id)
-        logger.info(f"Subscription: {subscription.status}")
+    def process_auto_renewals(self) -> List[StudentSubscription]:
+        """
+        Processes auto-renewals for subscriptions ending today.
+        This method is designed to be called by a scheduled task.
+        """
+        # This entire method will run in a single transaction
+        with transactional(self.db) as session:
+            return self._process_auto_renewals_logic(session)
+
+    def auto_unfreeze_expired_subscriptions(self) -> List[StudentSubscription]:
+        """
+        Automatically unfreezes subscriptions whose freeze period has expired.
+        This method is designed to be called by a scheduled task.
+        """
+        # This entire method will run in a single transaction
+        with transactional(self.db) as session:
+            return self._auto_unfreeze_expired_subscriptions_logic(session)
+
+    # --- Private Logic Methods (Non-Transactional) ---
+
+    def _add_subscription_to_student_logic(
+        self,
+        session: Session,
+        student_id: int,
+        subscription_id: int,
+        is_auto_renew: bool,
+        created_by_id: int
+    ) -> StudentSubscription:
+        student = student_crud.get_student_by_id(session, student_id)
+        if not student:
+            raise SubscriptionNotFound("Student not found")
+
+        subscription = crud.get_subscription_by_id(session, subscription_id)
         if not subscription:
-            raise HTTPException(status_code=404, detail="Subscription not found")
+            raise SubscriptionNotFound("Subscription not found")
 
-        # Проверяем, что абонемент заморожен
-        if (not subscription.freeze_start_date and not subscription.freeze_end_date):
-            raise HTTPException(status_code=400, detail="Subscription is not frozen")
+        if not student.is_active:
+            raise SubscriptionNotActive("Cannot add subscription to inactive student")
+
+        start_date = datetime.now(timezone.utc)
+        end_date = start_date + timedelta(days=subscription.validity_days)
+
+        student_subscription_data = StudentSubscriptionCreate(
+            student_id=student_id,
+            subscription_id=subscription_id,
+            start_date=start_date,
+            end_date=end_date,
+            is_auto_renew=is_auto_renew,
+            sessions_left=subscription.number_of_sessions,
+            transferred_sessions=0,
+            freeze_start_date=None,
+            freeze_end_date=None
+        )
         
-        # Приводим даты из БД к UTC, если они существуют
+        student_subscription = crud.create_student_subscription(session, student_subscription_data)
+        
+        # Use InvoiceService's private method, which does not commit
+        invoice_data = InvoiceCreate(
+            client_id=student.client_id,
+            student_id=student_id,
+            subscription_id=subscription_id,
+            type=InvoiceType.SUBSCRIPTION,
+            amount=subscription.price,
+            description=f"Subscription: {subscription.name}",
+            status=InvoiceStatus.UNPAID, 
+            is_auto_renewal=False
+        )
+        
+        # Call the financial service method
+        self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
+        
+        self.student_service.update_active_subscription_id(session, student)
+        session.refresh(student_subscription)
+        
+        return student_subscription
+
+    def _update_auto_renewal_logic(
+        self,
+        session: Session,
+        student_subscription_id: int,
+        is_auto_renew: bool,
+        updated_by_id: int
+    ) -> StudentSubscription:
+        subscription = crud.get_student_subscription(session, student_subscription_id)
+        if not subscription:
+            raise SubscriptionNotFound("Subscription not found")
+
+        updated_subscription = crud.update_student_subscription(
+            session, 
+            student_subscription_id, 
+            StudentSubscriptionUpdate(is_auto_renew=is_auto_renew)
+        )
+        
+        return updated_subscription
+
+    def _freeze_subscription_logic(
+        self,
+        session: Session,
+        student_subscription_id: int,
+        freeze_start_date: datetime,
+        freeze_duration_days: int,
+        updated_by_id: int
+    ) -> StudentSubscription:
+        subscription = crud.get_student_subscription(session, student_subscription_id)
+        if not subscription:
+            raise SubscriptionNotFound("Subscription not found")
+
+        if subscription.status != "active":
+            raise SubscriptionNotActive("Can only freeze active subscriptions")
+
+        if subscription.freeze_start_date or subscription.freeze_end_date:
+            raise SubscriptionAlreadyFrozen("Subscription is already frozen")
+
+        freeze_end_date = freeze_start_date + timedelta(days=freeze_duration_days)
+        frozen_subscription = crud.freeze_subscription(
+            session,
+            student_subscription_id,
+            freeze_start_date,
+            freeze_end_date
+        )
+
+        if not frozen_subscription:
+            raise SubscriptionError("Failed to freeze subscription")
+
+        logger.debug(f"Subscription after freeze: {frozen_subscription.status}")
+        logger.debug(f"Subscription after freeze: {frozen_subscription.freeze_start_date}")
+        logger.debug(f"Subscription after freeze: {frozen_subscription.freeze_end_date}")
+
+        return frozen_subscription
+
+    def _unfreeze_subscription_logic(
+        self,
+        session: Session,
+        student_subscription_id: int,
+        updated_by_id: int
+    ) -> StudentSubscription:
+        subscription = crud.get_student_subscription(session, student_subscription_id)
+        if not subscription:
+            raise SubscriptionNotFound("Subscription not found")
+
+        if (not subscription.freeze_start_date and not subscription.freeze_end_date):
+            raise SubscriptionNotFrozen("Subscription is not frozen")
+        
         freeze_end_date_utc = subscription.freeze_end_date.replace(tzinfo=timezone.utc) if subscription.freeze_end_date else None
         freeze_start_date_utc = subscription.freeze_start_date.replace(tzinfo=timezone.utc) if subscription.freeze_start_date else None
         current_time_utc = datetime.now(timezone.utc)
 
-        if not freeze_end_date_utc or not freeze_start_date_utc: # Дополнительная проверка на None, хотя логика выше должна это покрывать
-             raise HTTPException(status_code=400, detail="Frozen dates are missing unexpectedly")
+        if not freeze_end_date_utc or not freeze_start_date_utc: 
+             raise SubscriptionError("Frozen dates are missing unexpectedly")
 
-        freeze_remaining_days = min((freeze_end_date_utc - current_time_utc).days, (freeze_end_date_utc - freeze_start_date_utc).days)
-        if freeze_remaining_days > 0:
-            subscription.end_date = subscription.end_date - timedelta(days=freeze_remaining_days)
-       
-        # Убираем заморозку
-        subscription.freeze_start_date = None
-        subscription.freeze_end_date = None
-
-        self.db.commit()
-        self.db.refresh(subscription)
-
-        return subscription
-
-    def process_auto_renewals(self, admin_id: int) -> List[StudentSubscription]:
-        """
-        Проверяет абонементы с включенным автопродлением, которые заканчиваются сегодня,
-        и создает новые абонементы на следующий период.
-        """
-        from app.services.invoice import InvoiceService
-        invoice_service = InvoiceService(self.db)
+        unfrozen_subscription = crud.unfreeze_subscription(session, student_subscription_id)
         
-        # Получаем все активные абонементы с автопродлением, которые заканчиваются сегодня
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        
-        subscriptions_to_renew = (
-            self.db.query(StudentSubscription)
-            .filter(
-                and_(
-                    StudentSubscription.is_auto_renew == True,
-                    StudentSubscription.end_date >= today_start,
-                    StudentSubscription.end_date < today_end,
-                    StudentSubscription.status == "active",
-                    StudentSubscription.auto_renewal_invoice_id.is_(None)
-                )
-            )
-            .all()
+        if not unfrozen_subscription:
+            raise SubscriptionError("Failed to unfreeze subscription")
+
+        freeze_remaining_days = min(
+            (freeze_end_date_utc - current_time_utc).days, 
+            (freeze_end_date_utc - freeze_start_date_utc).days
         )
+        if freeze_remaining_days > 0:
+            update_data = StudentSubscriptionUpdate(
+                end_date=unfrozen_subscription.end_date - timedelta(days=freeze_remaining_days)
+            )
+            unfrozen_subscription = crud.update_student_subscription(
+                session, 
+                student_subscription_id, 
+                update_data
+            )
+        
+        return unfrozen_subscription
 
+    def _process_auto_renewals_logic(self, session: Session) -> List[StudentSubscription]:
+        subscriptions_to_renew = crud.get_today_auto_renewal_subscriptions(session)
+
+        logger.info(f"Found {len(subscriptions_to_renew)} subscriptions for auto-renewal")
         renewed_subscriptions = []
+        
         for subscription in subscriptions_to_renew:
-            # Создаем инвойс для автопродления
-            auto_renewal_invoice = invoice_service.create_auto_renewal_invoice(
-                student_subscription=subscription
-            )
-            
-            # Создаем новый абонемент, который начнется сразу после окончания текущего
-            new_subscription = StudentSubscription(
-                student_id=subscription.student_id,
-                subscription_id=subscription.subscription_id,
-                start_date=subscription.end_date,  # Начинается сразу после окончания текущего
-                end_date=subscription.end_date + timedelta(days=subscription.subscription.validity_days),
-                is_auto_renew=True,
-                sessions_left=subscription.subscription.number_of_sessions + min(subscription.sessions_left, 3),  # Сразу добавляем перенесенные тренировки
-                transferred_sessions=min(subscription.sessions_left, 3)  # Фиксируем количество перенесенных тренировок
-            )
-            self.db.add(new_subscription)
-            self.db.flush() # Получаем ID нового абонемента
+            try:
+                student = student_crud.get_student_by_id(session, subscription.student_id)
+                if not student or not student.is_active:
+                    logger.warning(f"Student {subscription.student_id} not found or inactive, skipping auto-renewal")
+                    continue
+                
+                subscription_template = crud.get_subscription_by_id(session, subscription.subscription_id)
+                if not subscription_template or not subscription_template.is_active:
+                    logger.warning(f"Subscription template {subscription.subscription_id} not found or inactive, skipping auto-renewal")
+                    continue
+                
+                new_start_date = subscription.end_date + timedelta(days=1)
+                new_subscription_data = StudentSubscriptionCreate(
+                    student_id=subscription.student_id,
+                    subscription_id=subscription.subscription_id,
+                    start_date=new_start_date,
+                    end_date=new_start_date + timedelta(days=subscription_template.validity_days),
+                    is_auto_renew=True,
+                    sessions_left=subscription_template.number_of_sessions,
+                    transferred_sessions=0,
+                    freeze_start_date=None,
+                    freeze_end_date=None
+                )
+                
+                new_subscription = crud.create_student_subscription(session, new_subscription_data)
 
-            # Связываем инвойс с новым абонементом (для бизнес-логики)
-            auto_renewal_invoice.student_subscription_id = new_subscription.id
-            
-            # Связываем текущий абонемент с инвойсом автопродления (для защиты от дублей)
-            subscription.auto_renewal_invoice_id = auto_renewal_invoice.id
-            
-            renewed_subscriptions.append(new_subscription)
+                crud.transfer_sessions(session, subscription, new_subscription, 3)
 
-        self.db.commit()
-        for subscription in renewed_subscriptions:
-            self.db.refresh(subscription)
+                invoice_data = InvoiceCreate(
+                    client_id=student.client_id,
+                    student_id=subscription.student_id,
+                    subscription_id=subscription.subscription_id,
+                    student_subscription_id=new_subscription.id, 
+                    type=InvoiceType.SUBSCRIPTION,
+                    amount=subscription_template.price,
+                    description=f"Auto-renewal: {subscription_template.name}",
+                    status=InvoiceStatus.UNPAID,
+                    is_auto_renewal=True
+                )
+                logger.debug(f"Creating invoice with student_subscription_id={new_subscription.id}")
+                
+                # Call the financial service method
+                self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
+                logger.debug(f"Created invoice for auto-renewal")
+                
+                crud.update_subscription_auto_renewal_invoice(
+                    session, 
+                    subscription.id, 
+                    new_subscription.id # This should be the invoice ID, not new_subscription.id
+                )
+                
+                renewed_subscriptions.append(new_subscription)
+                logger.info(f"Successfully auto-renewed subscription {subscription.id} for student {subscription.student_id}")
+                
+            except Exception as e:
+                logger.error(f"Failed to auto-renew subscription {subscription.id} for student {subscription.student_id}: {str(e)}")
+                continue
 
+        logger.info(f"Successfully renewed {len(renewed_subscriptions)} subscriptions")
         return renewed_subscriptions
 
-    def auto_unfreeze_expired_subscriptions(self, admin_id: int) -> List[StudentSubscription]:
-        """
-        Автоматически размораживает абонементы, у которых период заморозки уже закончился.
-        Вызывается по расписанию или вручную администратором.
-        """
+    def _auto_unfreeze_expired_subscriptions_logic(self, session: Session) -> List[StudentSubscription]:
         current_time = datetime.now(timezone.utc)
         
-        # Находим все абонементы с истёкшей заморозкой
-        expired_frozen_subscriptions = (
-            self.db.query(StudentSubscription)
-            .filter(
-                and_(
-                    StudentSubscription.freeze_end_date.isnot(None),
-                    StudentSubscription.freeze_end_date < current_time
-                )
-            )
-            .all()
-        )
+        frozen_subscriptions = crud.get_frozen_subscriptions(session)
         
         unfrozen_subscriptions = []
-        for subscription in expired_frozen_subscriptions:
-            logger.info(f"Auto-unfreezing subscription {subscription.id} for student {subscription.student_id}")
-            
-            # Сбрасываем поля заморозки
-            subscription.freeze_start_date = None
-            subscription.freeze_end_date = None
-            
-            unfrozen_subscriptions.append(subscription)
         
-        if unfrozen_subscriptions:
-            self.db.commit()
-            for subscription in unfrozen_subscriptions:
-                self.db.refresh(subscription)
-            
-            logger.info(f"Auto-unfroze {len(unfrozen_subscriptions)} subscriptions")
-        
-        return unfrozen_subscriptions 
+        for subscription in frozen_subscriptions:
+            try:
+                unfrozen_subscription = crud.unfreeze_subscription(session, subscription.id)
+                
+                if unfrozen_subscription:
+                    unfrozen_subscriptions.append(unfrozen_subscription)
+                    logger.info(f"Auto-unfroze subscription {subscription.id} for student {subscription.student_id}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to unfreeze subscription {subscription.id} for student {subscription.student_id}: {str(e)}")
+                continue
+
+        return unfrozen_subscriptions

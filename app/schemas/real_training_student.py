@@ -4,6 +4,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, validator
 
 from app.models.real_training import AttendanceStatus
+from app.schemas.student import StudentResponse
 
 
 class RealTrainingStudentCreate(BaseModel):
@@ -27,6 +28,8 @@ class RealTrainingStudentUpdate(BaseModel):
         from_attributes = True
 
 
+from app.schemas.student import StudentResponse
+
 class RealTrainingStudentResponse(BaseModel):
     real_training_id: int
     student_id: int
@@ -34,6 +37,7 @@ class RealTrainingStudentResponse(BaseModel):
     cancelled_at: Optional[datetime] = None
     cancellation_reason: Optional[str] = None
     attendance_marked_at: Optional[datetime] = None
+    student: Optional[StudentResponse] = None
 
     class Config:
         from_attributes = True 

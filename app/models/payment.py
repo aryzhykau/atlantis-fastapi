@@ -17,6 +17,7 @@ class Payment(Base):
     registered_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    cancellation_reason = Column(String, nullable=True)
 
     # Relationships
     client = relationship("User", foreign_keys=[client_id], backref="payments")
