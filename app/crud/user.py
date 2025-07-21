@@ -42,8 +42,10 @@ def create_user(db: Session, user: UserCreate) -> User:
         first_name=user.first_name,
         last_name=user.last_name,
         role=UserRole.CLIENT,
-        phone=user.phone,
+        phone_country_code=user.phone_country_code,
+        phone_number=user.phone_number,
         date_of_birth=user.date_of_birth,
+        whatsapp_country_code=user.whatsapp_country_code,
         whatsapp_number=user.whatsapp_number,
         is_authenticated_with_google=True,
         balance=0
