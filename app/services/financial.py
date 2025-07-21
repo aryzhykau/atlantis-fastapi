@@ -10,9 +10,11 @@ from app.crud import user as user_crud
 from app.crud import student as student_crud
 from app.crud import real_training as real_training_crud
 from app.crud import subscription as subscription_crud
-from app.models import Invoice, InvoiceStatus, InvoiceType, Payment, User, PaymentHistory
+from app.crud import expense as expense_crud
+from app.models import Invoice, InvoiceStatus, InvoiceType, Payment, User, PaymentHistory, Expense, ExpenseType
 from app.models.payment_history import OperationType
 from app.schemas.invoice import InvoiceCreate
+from app.schemas.expense import ExpenseCreate, ExpenseTypeCreate
 from app.schemas.user import UserUpdate
 from app.database import transactional
 
@@ -313,3 +315,19 @@ class FinancialService:
     def get_trainer_registered_payments(self, trainer_id: int, period: str, client_id: Optional[int], amount_min: Optional[float], amount_max: Optional[float], date_from: Optional[str], date_to: Optional[str], description_search: Optional[str], skip: int, limit: int) -> dict:
         # Placeholder for trainer registered payments
         return {"payments": [], "total": 0, "skip": 0, "limit": 0, "has_more": False}
+
+    def create_expense(self, expense_data: ExpenseCreate) -> Expense:
+        return expense_crud.create_expense(self.db, expense=expense_data)
+
+    def get_expenses(
+        self, user_id: Optional[int] = None, expense_type_id: Optional[int] = None, skip: int = 0, limit: int = 100
+    ) -> List[Expense]:
+        return expense_crud.get_expenses(
+            self.db, user_id=user_id, expense_type_id=expense_type_id, skip=skip, limit=limit
+        )
+
+    def create_expense_type(self, expense_type_data: ExpenseTypeCreate) -> ExpenseType:
+        return expense_crud.create_expense_type(self.db, expense_type=expense_type_data)
+
+    def get_expense_types(self, skip: int = 0, limit: int = 100) -> List[ExpenseType]:
+        return expense_crud.get_expense_types(self.db, skip=skip, limit=limit)
