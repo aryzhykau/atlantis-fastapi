@@ -10,18 +10,22 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.auth.auth import router as auth_router
-from app.endpoints.user import router as user_router
-from app.endpoints.client import router as client_router
-from app.endpoints.trainer import router as trainer_router
-from app.endpoints.training_type import router as training_type_router
-from app.endpoints.subscription import router as subscription_router
-from app.endpoints.student import router as student_router
-from app.endpoints.training_template import router as training_template_router
-from app.endpoints.training_student_template import router as training_student_template_router
-from app.endpoints.real_trainings import router as real_training_router
-from app.endpoints.invoice import router as invoice_router
-from app.endpoints.payment import router as payment_router
-from app.endpoints.cron import router as cron_router
+from app.endpoints import (
+    client,
+    student,
+    trainer,
+    subscription,
+    real_trainings,
+    training_type,
+    payment,
+    invoice,
+    cron,
+    health,
+    expense,
+    training_template,
+    training_student_template,
+    user
+)
 
 logging.basicConfig(level=logging.DEBUG) # Ensure basic config is debug
 
@@ -62,18 +66,20 @@ app.add_middleware(
 
 # Регистрация маршрутов
 app.include_router(auth_router)
-app.include_router(user_router)
-app.include_router(client_router)
-app.include_router(trainer_router)
-app.include_router(training_type_router)
-app.include_router(subscription_router)
-app.include_router(student_router)
-app.include_router(training_template_router)
-app.include_router(training_student_template_router)
-app.include_router(real_training_router)
-app.include_router(invoice_router)
-app.include_router(payment_router)
-app.include_router(cron_router)
+app.include_router(user.router)
+app.include_router(health.router)
+app.include_router(client.router)
+app.include_router(student.router)
+app.include_router(trainer.router)
+app.include_router(subscription.router)
+app.include_router(real_trainings.router)
+app.include_router(training_type.router)
+app.include_router(payment.router)
+app.include_router(invoice.router)
+app.include_router(cron.router)
+app.include_router(expense.router)
+app.include_router(training_template.router)
+app.include_router(training_student_template.router)
 
 
 @app.get("/")
