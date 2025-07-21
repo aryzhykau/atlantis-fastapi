@@ -49,7 +49,8 @@ class StudentUser(BaseModel):
     id: int
     first_name: str
     last_name: str
-    phone: str
+    phone_country_code: str
+    phone_number: str
     email: str
     balance: float | None = None
 

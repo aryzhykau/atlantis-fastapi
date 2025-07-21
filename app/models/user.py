@@ -20,8 +20,10 @@ class User(Base):
     last_name = Column(String, nullable=False)  # Фамилия пользователя
     date_of_birth = Column(Date, nullable=False)  # Дата рождения
     email = Column(String, unique=True, nullable=False)  # Уникальный Email
-    phone = Column(String, unique=True, nullable=False)  # Уникальный Телефон
+    phone_country_code = Column(String, nullable=False)  # Код страны телефона
+    phone_number = Column(String, unique=True, nullable=False)  # Уникальный номер телефона
     role = Column(Enum(UserRole), nullable=False)  # Роль ("CLIENT", "TRAINER", "ADMIN")
+    whatsapp_country_code = Column(String, nullable=True)  # Код страны WhatsApp
     whatsapp_number = Column(String, nullable=True)  # Номер WhatsApp (только для клиентов)
 
     # Поля, специфичные для клиентов (role == CLIENT)
@@ -42,7 +44,7 @@ class User(Base):
     real_trainings = relationship("RealTraining", back_populates="trainer")
 
     # Валидация: WhatsApp только для клиентов
-    @validates("whatsapp_number")
+    @validates("whatsapp_number", "whatsapp_country_code")
     def validate_whatsapp_number(self, key, value):
         if not self.role: return value
         if self.role != UserRole.CLIENT and value is not None:

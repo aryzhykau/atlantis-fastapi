@@ -18,7 +18,8 @@ class UserBase(BaseModel):
     last_name: str
     date_of_birth: date
     email: EmailStr
-    phone: str
+    phone_country_code: str
+    phone_number: str
     role: UserRole
     is_authenticated_with_google: bool
 
@@ -31,8 +32,10 @@ class ClientCreate(BaseModel):
     date_of_birth: date = Field(..., description="Date of birth")
     is_student: bool = False
     email: EmailStr
-    phone: str = Field(..., min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
-    whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    phone_country_code: str = Field(..., min_length=1, max_length=4)
+    phone_number: str = Field(..., min_length=5, max_length=15)
+    whatsapp_country_code: str | None = Field(None, min_length=1, max_length=4)
+    whatsapp_number: str | None = Field(None, min_length=5, max_length=15)
     students: list[StudentCreateWithoutClient] | None = None
 
     @field_validator('date_of_birth')
@@ -56,8 +59,10 @@ class ClientUpdate(BaseModel):
     first_name: str | None = Field(None, min_length=2, max_length=50)
     last_name: str | None = Field(None, min_length=2, max_length=50)
     email: EmailStr | None = None
-    phone: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
-    whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    phone_country_code: str | None = Field(None, min_length=1, max_length=4)
+    phone_number: str | None = Field(None, min_length=5, max_length=15)
+    whatsapp_country_code: str | None = Field(None, min_length=1, max_length=4)
+    whatsapp_number: str | None = Field(None, min_length=5, max_length=15)
     balance: float | None = Field(None, ge=0)
     is_active: bool | None = None
     date_of_birth: date | None = None
@@ -81,6 +86,7 @@ class ClientUpdate(BaseModel):
         return v
 
 class ClientResponse(UserBase):
+    whatsapp_country_code: str | None = None
     whatsapp_number: str | None = None
     balance: float | None = None
     is_active: bool | None = None
@@ -91,15 +97,16 @@ class TrainerCreate(BaseModel):
     last_name: str = Field(..., min_length=2, max_length=50)
     date_of_birth: date
     email: EmailStr
-    phone: str = Field(..., min_length=10, max_length=15)
+    phone_country_code: str = Field(..., min_length=1, max_length=4)
+    phone_number: str = Field(..., min_length=5, max_length=15)
     salary: float | None = Field(None, ge=0)
     is_fixed_salary: bool = False
 
-    @field_validator('phone')
+    @field_validator('phone_number')
     @classmethod
     def validate_phone(cls, v: str) -> str:
-        if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
-            raise ValueError('Invalid phone number format. Must contain 10 to 15 digits')
+        if not v or not re.match(r'^[0-9]{5,15}$', v):
+            raise ValueError('Invalid phone number format. Must contain 5 to 15 digits')
         return v
 
     @field_validator('date_of_birth')
@@ -134,7 +141,8 @@ class TrainerUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     email: EmailStr | None = None
-    phone: str | None = None
+    phone_country_code: str | None = None
+    phone_number: str | None = None
     salary: float | None = None
     is_fixed_salary: bool | None = None
     is_active: bool | None = None
@@ -156,8 +164,11 @@ class UserMe(BaseModel):
     first_name: str
     last_name: str
     email: EmailStr
-    phone: str
+    phone_country_code: str
+    phone_number: str
     role: UserRole
+
+    model_config = {"from_attributes": True}
 
 class StatusUpdate(BaseModel):
     is_active: bool
@@ -194,8 +205,10 @@ class UserUpdate(BaseModel):
     last_name: str | None = Field(None, min_length=2, max_length=50)
     date_of_birth: date | None = None
     email: EmailStr | None = None
-    phone: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
-    whatsapp_number: str | None = Field(None, min_length=10, max_length=15, pattern=r'^\+?[0-9]{10,15}$')
+    phone_country_code: str | None = Field(None, min_length=1, max_length=4)
+    phone_number: str | None = Field(None, min_length=5, max_length=15)
+    whatsapp_country_code: str | None = Field(None, min_length=1, max_length=4)
+    whatsapp_number: str | None = Field(None, min_length=5, max_length=15)
     balance: float | None = Field(None, ge=0)
     is_active: bool | None = None
     salary: float | None = Field(None, ge=0)
@@ -219,23 +232,11 @@ class UserUpdate(BaseModel):
             return v.strip()
         return v
 
-    @field_validator('phone')
+    @field_validator('phone_number')
     @classmethod
     def validate_phone(cls, v: str | None) -> str | None:
         if v is not None:
-            if not v or not re.match(r'^\+?[0-9]{10,15}$', v):
-                raise ValueError('Invalid phone number format. Must contain 10 to 15 digits')
+            if not v or not re.match(r'^[0-9]{5,15}$', v):
+                raise ValueError('Invalid phone number format. Must contain 5 to 15 digits')
             return v
         return v
-
-    @model_validator(mode='after')
-    def validate_salary(self) -> 'UserUpdate':
-        salary = self.salary
-        is_fixed = self.is_fixed_salary
-
-        if is_fixed is not None and is_fixed:
-            if salary is None or salary == 0:
-                raise ValueError('Fixed salary cannot be zero')
-        if salary is not None and salary < 0:
-            raise ValueError('Salary cannot be negative')
-        return self

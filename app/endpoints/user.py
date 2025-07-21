@@ -30,6 +30,8 @@ def get_current_user(current_user=Depends(verify_jwt_token), db: Session = Depen
         first_name=user.first_name,
         last_name=user.last_name,
         email=user.email,
-        phone=user.phone,
-        role=user.role
+        phone_country_code=user.phone_country_code,
+        phone_number=user.phone_number,
+        role=user.role,
+        is_authenticated_with_google=user.is_authenticated_with_google
     )
