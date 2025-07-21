@@ -209,11 +209,20 @@ class SubscriptionService:
             raise SubscriptionAlreadyFrozen("Subscription is already frozen")
 
         freeze_end_date = freeze_start_date + timedelta(days=freeze_duration_days)
-        frozen_subscription = crud.freeze_subscription(
+        
+        # Продлеваем дату окончания абонемента
+        new_end_date = subscription.end_date + timedelta(days=freeze_duration_days)
+
+        update_data = StudentSubscriptionUpdate(
+            freeze_start_date=freeze_start_date,
+            freeze_end_date=freeze_end_date,
+            end_date=new_end_date
+        )
+
+        frozen_subscription = crud.update_student_subscription(
             session,
             student_subscription_id,
-            freeze_start_date,
-            freeze_end_date
+            update_data
         )
 
         if not frozen_subscription:
@@ -235,35 +244,37 @@ class SubscriptionService:
         if not subscription:
             raise SubscriptionNotFound("Subscription not found")
 
-        if (not subscription.freeze_start_date and not subscription.freeze_end_date):
+        if not subscription.freeze_start_date or not subscription.freeze_end_date:
             raise SubscriptionNotFrozen("Subscription is not frozen")
         
-        freeze_end_date_utc = subscription.freeze_end_date.replace(tzinfo=timezone.utc) if subscription.freeze_end_date else None
-        freeze_start_date_utc = subscription.freeze_start_date.replace(tzinfo=timezone.utc) if subscription.freeze_start_date else None
+        freeze_end_date_utc = subscription.freeze_end_date.replace(tzinfo=timezone.utc)
         current_time_utc = datetime.now(timezone.utc)
 
-        if not freeze_end_date_utc or not freeze_start_date_utc: 
-             raise SubscriptionError("Frozen dates are missing unexpectedly")
+        # Рассчитываем неиспользованные дни заморозки
+        remaining_freeze_days = 0
+        if current_time_utc < freeze_end_date_utc:
+            remaining_freeze_days = (freeze_end_date_utc - current_time_utc).days
 
-        unfrozen_subscription = crud.unfreeze_subscription(session, student_subscription_id)
+        # Корректируем дату окончания абонемента
+        new_end_date = subscription.end_date
+        if remaining_freeze_days > 0:
+            new_end_date -= timedelta(days=remaining_freeze_days)
+
+        update_data = StudentSubscriptionUpdate(
+            freeze_start_date=None,
+            freeze_end_date=None,
+            end_date=new_end_date
+        )
+        
+        unfrozen_subscription = crud.update_student_subscription(
+            session,
+            student_subscription_id,
+            update_data
+        )
         
         if not unfrozen_subscription:
             raise SubscriptionError("Failed to unfreeze subscription")
 
-        freeze_remaining_days = min(
-            (freeze_end_date_utc - current_time_utc).days, 
-            (freeze_end_date_utc - freeze_start_date_utc).days
-        )
-        if freeze_remaining_days > 0:
-            update_data = StudentSubscriptionUpdate(
-                end_date=unfrozen_subscription.end_date - timedelta(days=freeze_remaining_days)
-            )
-            unfrozen_subscription = crud.update_student_subscription(
-                session, 
-                student_subscription_id, 
-                update_data
-            )
-        
         return unfrozen_subscription
 
     def _process_auto_renewals_logic(self, session: Session) -> List[StudentSubscription]:

@@ -338,46 +338,6 @@ def add_session(
     return student_subscription
 
 
-def freeze_subscription(
-    db: Session,
-    student_subscription_id: int,
-    freeze_start_date: datetime,
-    freeze_end_date: datetime,
-) -> Optional[StudentSubscription]:
-    """
-    Заморозка абонемента
-    """
-    student_subscription = get_student_subscription(db, student_subscription_id)
-    if not student_subscription:
-        return None
-
-    student_subscription.freeze_start_date = freeze_start_date
-    student_subscription.freeze_end_date = freeze_end_date
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Обновляем объект, но не коммитим
-    db.refresh(student_subscription)
-    return student_subscription
-
-
-def unfreeze_subscription(
-    db: Session,
-    student_subscription_id: int,
-) -> Optional[StudentSubscription]:
-    """
-    Разморозка абонемента
-    """
-    student_subscription = get_student_subscription(db, student_subscription_id)
-    if not student_subscription:
-        return None
-
-    student_subscription.freeze_start_date = None
-    student_subscription.freeze_end_date = None
-    # НЕ делаем commit здесь - это делает сервис
-    db.flush()  # Обновляем объект, но не коммитим
-    db.refresh(student_subscription)
-    return student_subscription
-
-
 def check_subscription_availability(
     db: Session,
     student_id: int,

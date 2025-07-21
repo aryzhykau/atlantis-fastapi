@@ -53,6 +53,9 @@ class StudentSubscriptionCreate(StudentSubscriptionBase):
 
 class StudentSubscriptionUpdate(BaseModel):
     """Схема для обновления подписки студента"""
+    end_date: Optional[datetime] = Field(None, description="Дата окончания подписки")
+    freeze_start_date: Optional[datetime] = Field(None, description="Начало периода заморозки")
+    freeze_end_date: Optional[datetime] = Field(None, description="Конец периода заморозки")
     is_auto_renew: Optional[bool] = Field(None, description="Включить/выключить автопродление")
     sessions_left: Optional[int] = Field(None, description="Оставшиеся тренировки")
     transferred_sessions: Optional[int] = Field(None, description="Перенесенные тренировки")
