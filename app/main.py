@@ -28,6 +28,7 @@ from app.endpoints import (
     trainer_salaries
 )
 from app.endpoints import client_contacts
+from app.endpoints import stats
 
 logging.basicConfig(level=logging.DEBUG) # Ensure basic config is debug
 
@@ -84,6 +85,7 @@ app.include_router(training_template.router)
 app.include_router(training_student_template.router)
 app.include_router(trainer_salaries.router)
 app.include_router(client_contacts.router)
+app.include_router(stats.router)
 
 
 @app.get("/")
