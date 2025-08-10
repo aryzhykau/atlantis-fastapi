@@ -48,6 +48,16 @@ class ClientService:
                 crud_student.create_student(db, student_data=student_data, client_id=client.id)
 
         # 5. Commit the transaction
+        # 5. Создаём задачу контакта для нового клиента
+        try:
+            from app.services.client_contact import ClientContactService
+            from app.models.client_contact_task import ClientContactReason
+            contact_service = ClientContactService(db)
+            contact_service.create_task_on_new_client(client.id)
+        except Exception:
+            # Не блокируем создание клиента из-за ошибок побочного сервиса
+            pass
+
         db.commit()
         db.refresh(client)
         return client

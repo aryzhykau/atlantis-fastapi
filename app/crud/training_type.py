@@ -6,7 +6,11 @@ from app.schemas.training_type import TrainingTypeCreate, TrainingTypeUpdate
 def create_training_type(db: Session, training_type: TrainingTypeCreate) -> TrainingType:
     """Создает новый тип тренировки."""
     print("added")
-    db_training_type = TrainingType(**training_type.model_dump())
+    payload = training_type.model_dump()
+    # Если только по подписке — цена не должна сохраняться
+    if payload.get("is_subscription_only"):
+        payload["price"] = None
+    db_training_type = TrainingType(**payload)
     db.add(db_training_type)
     print("added")
     db.commit()
@@ -33,6 +37,12 @@ def update_training_type(
         return None
 
     update_data = training_type_update.model_dump(exclude_unset=True)
+    # Принудительно обнуляем цену, если тренировка только по подписке
+    if update_data.get("is_subscription_only") is True:
+        update_data["price"] = None
+    # Если пытаются установить цену при уже включенном флаге подписки — игнорируем цену
+    if getattr(db_training_type, "is_subscription_only", False) and "price" in update_data:
+        update_data["price"] = None
     for key, value in update_data.items():
         setattr(db_training_type, key, value)
 

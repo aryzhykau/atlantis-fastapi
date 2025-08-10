@@ -9,3 +9,4 @@ from .invoice import Invoice, InvoiceStatus, InvoiceType
 from .payment_history import PaymentHistory
 from .expense import Expense, ExpenseType
 from .trainer_training_type_salary import TrainerTrainingTypeSalary
+from .client_contact_task import ClientContactTask, ClientContactReason, ClientContactStatus

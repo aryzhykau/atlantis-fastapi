@@ -12,3 +12,11 @@ from .real_training_student import (
     RealTrainingStudentUpdate,
     RealTrainingStudentResponse
 )
+
+from .client_contact_task import (
+    ClientContactTaskCreate,
+    ClientContactTaskUpdate,
+    ClientContactTaskResponse,
+    ClientContactReason as ClientContactReasonSchema,
+    ClientContactStatus as ClientContactStatusSchema,
+)
