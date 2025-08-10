@@ -24,7 +24,8 @@ from app.endpoints import (
     expense,
     training_template,
     training_student_template,
-    user
+    user,
+    trainer_salaries
 )
 
 logging.basicConfig(level=logging.DEBUG) # Ensure basic config is debug
@@ -80,6 +81,7 @@ app.include_router(cron.router)
 app.include_router(expense.router)
 app.include_router(training_template.router)
 app.include_router(training_student_template.router)
+app.include_router(trainer_salaries.router)
 
 
 @app.get("/")

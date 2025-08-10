@@ -8,3 +8,4 @@ from .payment import Payment
 from .invoice import Invoice, InvoiceStatus, InvoiceType
 from .payment_history import PaymentHistory
 from .expense import Expense, ExpenseType
+from .trainer_training_type_salary import TrainerTrainingTypeSalary

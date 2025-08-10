@@ -43,6 +43,7 @@ class User(Base):
     # Relationships
     real_trainings = relationship("RealTraining", back_populates="trainer")
     expenses = relationship("Expense", back_populates="user")
+    training_type_salaries = relationship("TrainerTrainingTypeSalary", back_populates="trainer")
 
     # Валидация: WhatsApp только для клиентов
     @validates("whatsapp_number", "whatsapp_country_code")

@@ -1,3 +1,4 @@
+from .user import UserUpdate, TrainerCreate, TrainerUpdate, TrainerResponse, ClientCreate, ClientUpdate, ClientResponse, UserRole
 from .real_training import (
     AttendanceStatus,
     RealTrainingBase,

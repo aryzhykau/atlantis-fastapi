@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
-from app.models import InvoiceStatus
+from app.models import InvoiceStatus, InvoiceType
 from app.schemas.invoice import (
     SubscriptionInvoiceCreate,
     TrainingInvoiceCreate,
@@ -15,6 +15,39 @@ from app.schemas.invoice import (
 from app.services.financial import FinancialService
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
+
+
+@router.get("/", response_model=InvoiceList)
+def get_invoices(
+    client_id: Optional[int] = None,
+    student_id: Optional[int] = None,
+    status: Optional[InvoiceStatus] = None,
+    invoice_type: Optional[InvoiceType] = None,
+
+    skip: int = 0,
+    limit: int = 100,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка инвойсов с фильтрами.
+    Доступно всем авторизованным пользователям.
+    """
+    service = FinancialService(db)
+    invoices = service.get_invoices(
+        client_id=client_id,
+        student_id=student_id,
+        status=status,
+        invoice_type=invoice_type,
+        skip=skip,
+        limit=limit
+    )
+    total_invoices = service.get_invoice_count(
+        client_id=client_id,
+        student_id=student_id,
+        status=status,
+    )
+    return {"items": invoices, "total": total_invoices}
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
