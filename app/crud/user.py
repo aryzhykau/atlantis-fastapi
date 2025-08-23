@@ -1,7 +1,7 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models import User, UserRole
-from app.schemas.user import UserUpdate, ClientCreate as UserCreate
+from app.schemas import UserUpdate, ClientCreate
 
 
 def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
@@ -36,7 +36,7 @@ def get_users_by_role(db: Session, role: str) -> List[User]:
     return db.query(User).filter(User.role == role).order_by(User.first_name, User.last_name).all()
 
 
-def create_user(db: Session, user: UserCreate) -> User:
+def create_user(db: Session, user: ClientCreate) -> User:
     db_user = User(
         email=user.email,
         first_name=user.first_name,

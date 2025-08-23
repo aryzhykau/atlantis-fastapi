@@ -10,6 +10,7 @@ from app.services.subscription import SubscriptionService
 from app.services.training_processing import TrainingProcessingService
 from app.services.daily_operations import DailyOperationsService
 from app.services.financial import FinancialService
+from app.services.client_contact import ClientContactService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -149,3 +150,23 @@ def process_daily_operations_endpoint(db: Session = Depends(get_db)):
     service = DailyOperationsService(db)
     service.process_daily_operations()
     return {"status": "success", "message": "Daily operations processing started."} 
+
+
+@router.post("/detect-returned-clients", dependencies=[Depends(verify_api_key)])
+def detect_returned_clients_endpoint(db: Session = Depends(get_db)):
+    """
+    Детектит клиентов, вернувшихся после периода неактивности (>= 30 дней),
+    и создаёт для них PENDING-задачи контакта с reason=RETURNED.
+    """
+    try:
+        service = ClientContactService(db)
+        created = service.detect_and_create_returned_clients_tasks()
+        db.commit()
+        return {
+            "message": "Detection completed",
+            "created": created,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error in detect-returned-clients: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

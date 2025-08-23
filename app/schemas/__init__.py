@@ -1,3 +1,4 @@
+from .user import UserUpdate, TrainerCreate, TrainerUpdate, TrainerResponse, ClientCreate, ClientUpdate, ClientResponse, UserRole
 from .real_training import (
     AttendanceStatus,
     RealTrainingBase,
@@ -10,4 +11,12 @@ from .real_training_student import (
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
     RealTrainingStudentResponse
+)
+
+from .client_contact_task import (
+    ClientContactTaskCreate,
+    ClientContactTaskUpdate,
+    ClientContactTaskResponse,
+    ClientContactReason as ClientContactReasonSchema,
+    ClientContactStatus as ClientContactStatusSchema,
 )
