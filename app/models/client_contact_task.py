@@ -34,3 +34,4 @@ class ClientContactTask(Base):
     assigned_to = relationship("User", foreign_keys=[assigned_to_id])
 
 
+

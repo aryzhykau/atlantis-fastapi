@@ -44,3 +44,4 @@ class ClientContactTaskResponse(BaseModel):
         from_attributes = True
 
 
+
