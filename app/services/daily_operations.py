@@ -27,13 +27,19 @@ class DailyOperationsService:
         logger.info("Starting daily operations...")
 
         # --- Этап 1: Обработка посещаемости за сегодня ---
-        self._process_today_attendance(today)
+        students_updated = self._process_today_attendance(today)
 
         # --- Этап 2: Финансовая обработка за сегодня ---
-        self._process_today_finances(today)
+        trainings_processed = self._process_today_finances(today)
 
         logger.info("Daily operations completed.")
         self.db.commit()
+        
+        return {
+            "students_updated": students_updated,
+            "trainings_processed": trainings_processed,
+            "processing_date": today.isoformat()
+        }
 
     def _process_today_attendance(self, processing_date: date):
         """
@@ -67,6 +73,8 @@ class DailyOperationsService:
             f"Attendance processing for {processing_date} finished. "
             f"Updated {students_updated} students."
         )
+        
+        return students_updated
 
     def _process_today_finances(self, processing_date: date):
         """
@@ -90,4 +98,6 @@ class DailyOperationsService:
         logger.info(
             f"Financial processing for {processing_date} finished. "
             f"Processed {processed_count} trainings."
-        ) 
+        )
+        
+        return processed_count 

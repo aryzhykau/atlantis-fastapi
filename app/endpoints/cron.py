@@ -147,9 +147,21 @@ def process_daily_operations_endpoint(db: Session = Depends(get_db)):
     - Обработка посещаемости за сегодня (REGISTERED -> PRESENT)
     - Финансовая обработка тренировок на завтра (списание занятий/инвойсы)
     """
-    service = DailyOperationsService(db)
-    service.process_daily_operations()
-    return {"status": "success", "message": "Daily operations processing started."} 
+    try:
+        service = DailyOperationsService(db)
+        result = service.process_daily_operations()
+        
+        return {
+            "status": "success", 
+            "message": "Daily operations completed successfully",
+            "students_updated": result["students_updated"],
+            "trainings_processed": result["trainings_processed"],
+            "processing_date": result["processing_date"],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in daily operations: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 
 
 
 @router.post("/detect-returned-clients", dependencies=[Depends(verify_api_key)])
