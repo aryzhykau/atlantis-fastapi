@@ -65,6 +65,14 @@ class TrainingCancellationRequest(BaseModel):
     process_refunds: bool = True  # Нужно ли запускать финансовые процессы
 
 
+class StudentCancellationResponse(BaseModel):
+    """Схема ответа при отмене участия студента"""
+    student_cancelled: bool
+    trainer_salary_result: dict
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RealTrainingStudentCreate(BaseModel):
     """Схема для создания записи студента на тренировку"""
     student_id: int

@@ -6,7 +6,7 @@ from datetime import datetime
 from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
 from app.schemas.user import TrainerCreate, TrainerResponse, TrainerUpdate, TrainersList, UserRole, StatusUpdate
-from app.schemas.payment import PaymentResponse, PaymentHistoryFilterRequest, PaymentHistoryListResponse, PaymentListResponse
+from app.schemas.payment import PaymentResponse, PaymentHistoryFilterRequest, PaymentHistoryListResponse, PaymentListResponse, PaymentExtendedListResponse
 from app.crud.trainer import (create_trainer, get_trainer, get_all_trainers,
                               update_trainer, delete_trainer, update_trainer_status)
 from app.services.financial import FinancialService
@@ -142,7 +142,7 @@ def get_trainer_payments_endpoint(
     )
 
 # Получение платежей, зарегистрированных тренером
-@router.get("/{trainer_id}/registered-payments", response_model=PaymentListResponse)
+@router.get("/{trainer_id}/registered-payments", response_model=PaymentExtendedListResponse)
 def get_trainer_registered_payments_endpoint(
     trainer_id: int,
     period: str = Query("all", description="Период: week/2weeks/all"),
@@ -188,7 +188,7 @@ def get_trainer_registered_payments_endpoint(
         limit=limit
     )
     
-    return PaymentListResponse(
+    return PaymentExtendedListResponse(
         payments=result["payments"],
         total=result["total"],
         skip=result["skip"],

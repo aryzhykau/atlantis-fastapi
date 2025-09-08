@@ -11,6 +11,7 @@ from app.schemas.real_training import (
     RealTrainingUpdate,
     RealTrainingResponse,
     StudentCancellationRequest,
+    StudentCancellationResponse,
     TrainingCancellationRequest,
 )
 from app.schemas.real_training_student import (
@@ -354,9 +355,9 @@ def generate_next_week_endpoint(
 # Отмена участия студента в тренировке
 @router.delete(
     "/{training_id}/students/{student_id}/cancel",
-    status_code=204
+    response_model=StudentCancellationResponse
 )
-async def cancel_student_endpoint(
+def cancel_student_endpoint(
     training_id: int,
     student_id: int,
     cancellation_data: StudentCancellationRequest,
@@ -375,7 +376,7 @@ async def cancel_student_endpoint(
         )
 
     service = RealTrainingService(db)
-    training = service.get_training(training_id)
+    training = service._get_training(db, training_id)
     if not training:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
 
@@ -387,8 +388,8 @@ async def cancel_student_endpoint(
             detail="Вы можете отменять участие только на своих тренировках"
         )
 
-    await service.cancel_student(training_id, student_id, cancellation_data)
-    return None
+    result = service.cancel_student(training_id, student_id, cancellation_data, current_user["id"])
+    return result
 
 
 # Отмена тренировки

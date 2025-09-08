@@ -29,6 +29,7 @@ from app.schemas.real_training import (
 from app.database import transactional
 from app.services.financial import FinancialService
 from app.services.subscription import SubscriptionService
+from app.services.trainer_salary import TrainerSalaryService
 from app.errors.real_training_errors import (
     RealTrainingError,
     TrainingNotFound,
@@ -38,6 +39,7 @@ from app.errors.real_training_errors import (
     SubscriptionRequired,
     InsufficientSessions
 )
+from app.schemas.invoice import InvoiceCreate
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ class RealTrainingService:
         self.db = db
         self.financial_service = FinancialService(db)
         self.subscription_service = SubscriptionService(db)
+        self.trainer_salary_service = TrainerSalaryService(db)
 
     # --- Public Methods (Transactional) ---
 
@@ -56,13 +59,27 @@ class RealTrainingService:
         self,
         training_id: int,
         student_id: int,
-        cancellation_data: StudentCancellationRequest
-    ) -> None:
+        cancellation_data: StudentCancellationRequest,
+        processed_by_id: int
+    ) -> dict:
         """
         Отмена участия студента в тренировке
         """
         with transactional(self.db) as session:
             self._cancel_student_logic(session, training_id, student_id, cancellation_data)
+            
+            # Process trainer salary after student cancellation
+            salary_result = self.trainer_salary_service.process_student_cancellation_salary(
+                training_id=training_id,
+                cancelled_student_id=student_id,
+                cancellation_time=cancellation_data.notification_time,
+                processed_by_id=processed_by_id
+            )
+            
+            return {
+                "student_cancelled": True,
+                "trainer_salary_result": salary_result
+            }
 
     def cancel_training(
         self,
@@ -147,11 +164,11 @@ class RealTrainingService:
 
         student_training = self._get_student_training(session, training_id, student_id)
         if not student_training:
-            raise StudentNotOnTraining("Student not found on this training")
+            raise StudentNotOnTraining("Студент не найден на этой тренировке")
 
         can_cancel_safely = self._check_cancellation_time(
             training, 
-            cancellation_data.cancellation_time or datetime.now(timezone.utc)
+            cancellation_data.notification_time or datetime.now(timezone.utc)
         )
 
         if can_cancel_safely:

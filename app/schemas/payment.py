@@ -149,4 +149,15 @@ class PaymentListResponse(BaseModel):
     limit: int
     has_more: bool
 
+    model_config = {"from_attributes": True}
+
+
+class PaymentExtendedListResponse(BaseModel):
+    """Схема ответа со списком расширенных платежей и пагинацией"""
+    payments: List[PaymentExtendedResponse]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
+
     model_config = {"from_attributes": True} 

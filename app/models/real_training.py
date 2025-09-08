@@ -37,6 +37,7 @@ class RealTraining(Base):
     cancelled_at = Column(DateTime, nullable=True)
     cancellation_reason = Column(String, nullable=True)
     processed_at = Column(DateTime, nullable=True)  # Время когда тренировка была обработана (процессинг)
+    trainer_salary_eligible = Column(Boolean, nullable=True, default=True)  # Имеет ли право тренер на зарплату за эту тренировку
 
     # Relationships
     trainer = relationship("User", back_populates="real_trainings")
