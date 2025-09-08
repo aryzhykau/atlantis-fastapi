@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy import and_, desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models import Invoice, InvoiceStatus, InvoiceType
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
@@ -29,7 +29,7 @@ def get_invoices(
     """
     Get a list of invoices with filters
     """
-    query = db.query(Invoice)
+    query = db.query(Invoice).options(joinedload(Invoice.client))
     
     if client_id:
         query = query.filter(Invoice.client_id == client_id)

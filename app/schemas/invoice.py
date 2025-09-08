@@ -6,6 +6,15 @@ from pydantic import BaseModel, Field
 from app.models import InvoiceType, InvoiceStatus
 
 
+class UserBasic(BaseModel):
+    """Basic user information for invoice responses"""
+    id: int
+    first_name: str
+    last_name: str
+    
+    model_config = {"from_attributes": True}
+
+
 class InvoiceBase(BaseModel):
     """Базовая схема инвойса"""
     client_id: int = Field(..., description="ID клиента")
@@ -50,6 +59,9 @@ class InvoiceResponse(BaseModel):
     cancelled_at: Optional[datetime] = None
     cancelled_by_id: Optional[int] = None
     is_auto_renewal: bool
+    
+    # Include client information
+    client: Optional[UserBasic] = None
 
     model_config = {"from_attributes": True}
 

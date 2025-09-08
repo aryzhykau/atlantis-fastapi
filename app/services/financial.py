@@ -220,6 +220,41 @@ class FinancialService:
     def get_invoice(self, invoice_id: int) -> Optional[Invoice]:
         return invoice_crud.get_invoice(self.db, invoice_id)
 
+    def get_invoices(
+        self, 
+        client_id: Optional[int] = None, 
+        student_id: Optional[int] = None, 
+        status: Optional[InvoiceStatus] = None, 
+        invoice_type: Optional[InvoiceType] = None,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Invoice]:
+        """Get invoices with optional filters"""
+        return invoice_crud.get_invoices(
+            self.db, 
+            client_id=client_id, 
+            student_id=student_id, 
+            status=status, 
+            invoice_type=invoice_type,
+            skip=skip, 
+            limit=limit
+        )
+
+    def get_invoice_count(
+        self, 
+        client_id: Optional[int] = None, 
+        student_id: Optional[int] = None, 
+        status: Optional[InvoiceStatus] = None, 
+        invoice_type: Optional[InvoiceType] = None
+    ) -> int:
+        """Get total count of invoices with optional filters"""
+        return invoice_crud.get_invoice_count(
+            self.db, 
+            client_id=client_id, 
+            student_id=student_id, 
+            status=status
+        )
+
     def get_student_invoices(
         self, student_id: int, status: Optional[InvoiceStatus] = None, skip: int = 0, limit: int = 100
     ) -> List[Invoice]:
