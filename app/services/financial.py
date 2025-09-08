@@ -1,8 +1,9 @@
 # app/services/financial.py
 import logging
 from typing import List, Optional
-
-from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, and_, or_
 
 from app.crud import invoice as invoice_crud
 from app.crud import payment as payment_crud
@@ -46,7 +47,7 @@ class FinancialService:
             if invoice_data.training_id:
                 training = real_training_crud.get_real_training(session, invoice_data.training_id)
                 if not training:
-                    raise ValueError("Training not found")
+                    raise ValueError("Тренировка не найдена")
 
             invoice = self._create_and_process_invoice_logic(session, invoice_data, auto_pay)
             return invoice
@@ -279,7 +280,7 @@ class FinancialService:
 
         training = real_training_crud.get_real_training(self.db, training_id)
         if not training:
-            raise ValueError("Training not found")
+            raise ValueError("Тренировка не найдена")
 
         invoice_data = InvoiceCreate(
             client_id=client_id,
@@ -313,8 +314,103 @@ class FinancialService:
         return {"items": [], "total": 0, "skip": 0, "limit": 0, "has_more": False}
 
     def get_trainer_registered_payments(self, trainer_id: int, period: str, client_id: Optional[int], amount_min: Optional[float], amount_max: Optional[float], date_from: Optional[str], date_to: Optional[str], description_search: Optional[str], skip: int, limit: int) -> dict:
-        # Placeholder for trainer registered payments
-        return {"payments": [], "total": 0, "skip": 0, "limit": 0, "has_more": False}
+        """
+        Get payments registered by a specific trainer with filtering options.
+        """
+        # Query with explicit joinedload to ensure client data is loaded
+        query = self.db.query(Payment).options(joinedload(Payment.client)).filter(Payment.registered_by_id == trainer_id)
+        
+        # Apply period filter
+        if period:
+            now = datetime.now()
+            if period == "week":
+                start_date = now - timedelta(weeks=1)
+            elif period == "2weeks":
+                start_date = now - timedelta(weeks=2)
+            else:  # period == "all" or other
+                start_date = None
+                
+            if start_date:
+                query = query.filter(Payment.payment_date >= start_date)
+        
+        # Apply date range filters
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, "%Y-%m-%d")
+                query = query.filter(Payment.payment_date >= from_date)
+            except ValueError:
+                pass  # Invalid date format, skip filter
+                
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, "%Y-%m-%d")
+                # Add 1 day to include the entire day
+                to_date = to_date + timedelta(days=1)
+                query = query.filter(Payment.payment_date < to_date)
+            except ValueError:
+                pass  # Invalid date format, skip filter
+        
+        # Apply other filters
+        if client_id:
+            query = query.filter(Payment.client_id == client_id)
+            
+        if amount_min is not None:
+            query = query.filter(Payment.amount >= amount_min)
+            
+        if amount_max is not None:
+            query = query.filter(Payment.amount <= amount_max)
+            
+        if description_search:
+            query = query.filter(Payment.description.ilike(f"%{description_search}%"))
+        
+        # Only include non-cancelled payments
+        query = query.filter(Payment.cancelled_at.is_(None))
+        
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination and ordering
+        results = query.order_by(Payment.payment_date.desc()).offset(skip).limit(limit).all()
+        
+        # Debug: Print the first result to see what we're getting
+        if results:
+            first_payment = results[0]
+            print(f"Debug - Payment: {first_payment}")
+            print(f"Debug - Client: {first_payment.client}")
+            if first_payment.client:
+                print(f"Debug - Client name: {first_payment.client.first_name} {first_payment.client.last_name}")
+        
+        # Transform results to include client information
+        payments_with_client_info = []
+        for payment in results:
+            payment_dict = {
+                'id': payment.id,
+                'client_id': payment.client_id,
+                'amount': payment.amount,
+                'description': payment.description,
+                'payment_date': payment.payment_date,
+                'registered_by_id': payment.registered_by_id,
+                'cancelled_at': payment.cancelled_at,
+                'cancelled_by_id': payment.cancelled_by_id,
+                'client_first_name': payment.client.first_name if payment.client else None,
+                'client_last_name': payment.client.last_name if payment.client else None,
+            }
+            payments_with_client_info.append(payment_dict)
+        
+        # Calculate has_more
+        has_more = (skip + len(payments_with_client_info)) < total
+        
+        print(f"Debug - Returning {len(payments_with_client_info)} payments with client info")
+        if payments_with_client_info:
+            print(f"Debug - First payment dict: {payments_with_client_info[0]}")
+        
+        return {
+            "payments": payments_with_client_info,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "has_more": has_more
+        }
 
     def create_expense(self, expense_data: ExpenseCreate) -> Expense:
         return expense_crud.create_expense(self.db, expense=expense_data)
@@ -331,3 +427,102 @@ class FinancialService:
 
     def get_expense_types(self, skip: int = 0, limit: int = 100) -> List[ExpenseType]:
         return expense_crud.get_expense_types(self.db, skip=skip, limit=limit)
+
+    def calculate_trainer_salary_for_cancellation(
+        self, 
+        training_id: int, 
+        cancelled_student_id: int, 
+        cancellation_time: datetime, 
+        training_start_datetime: datetime
+    ) -> dict:
+        """
+        Calculate if trainer should receive salary when a student cancels.
+        
+        Returns:
+        - should_receive_salary: bool
+        - reason: str (explanation)
+        - remaining_students_count: int
+        """
+        from datetime import timedelta
+        
+        training = real_training_crud.get_real_training(self.db, training_id)
+        if not training:
+            raise ValueError("Тренировка не найдена")
+            
+        trainer = user_crud.get_user_by_id(self.db, training.responsible_trainer_id)
+        if not trainer:
+            raise ValueError("Тренер не найден")
+            
+        # Calculate hours before training
+        hours_before = (training_start_datetime - cancellation_time).total_seconds() / 3600
+        
+        # Count remaining students (excluding the cancelled one)
+        remaining_students = [
+            student for student in training.students 
+            if student.student_id != cancelled_student_id and 
+            student.status not in ['CANCELLED_SAFE', 'CANCELLED_PENALTY']
+        ]
+        remaining_count = len(remaining_students)
+        
+        # Fixed salary trainers never get individual training salary
+        if trainer.is_fixed_salary:
+            return {
+                "should_receive_salary": False,
+                "reason": "Trainer has fixed salary - individual training payments not applicable",
+                "remaining_students_count": remaining_count,
+                "hours_before_training": hours_before
+            }
+        
+        # Non-fixed salary logic
+        if hours_before >= 5:  # 5+ hours before
+            if remaining_count > 0:
+                return {
+                    "should_receive_salary": True,
+                    "reason": f"Other students remain ({remaining_count}) - trainer gets salary",
+                    "remaining_students_count": remaining_count,
+                    "hours_before_training": hours_before
+                }
+            else:
+                return {
+                    "should_receive_salary": False,
+                    "reason": "No other students remain and cancellation was timely (5+ hours)",
+                    "remaining_students_count": remaining_count,
+                    "hours_before_training": hours_before
+                }
+        else:  # Less than 5 hours before
+            return {
+                "should_receive_salary": True,
+                "reason": "Late cancellation (< 5 hours) - trainer compensation applies",
+                "remaining_students_count": remaining_count,
+                "hours_before_training": hours_before
+            }
+
+    def create_trainer_salary_expense(
+        self, 
+        trainer_id: int, 
+        training_id: int, 
+        amount: float, 
+        description: str,
+        created_by_id: int
+    ) -> Expense:
+        """Create an expense record for trainer salary"""
+        
+        # Get or create "Trainer Salary" expense type
+        trainer_salary_type = expense_crud.get_expense_type_by_name(self.db, "Trainer Salary")
+        if not trainer_salary_type:
+            from app.schemas.expense import ExpenseTypeCreate
+            trainer_salary_type = self.create_expense_type(
+                ExpenseTypeCreate(
+                    name="Trainer Salary",
+                    description="Individual training session payments to trainers"
+                )
+            )
+        
+        expense_data = ExpenseCreate(
+            user_id=trainer_id,
+            expense_type_id=trainer_salary_type.id,
+            amount=amount,
+            description=description
+        )
+        
+        return self.create_expense(expense_data)

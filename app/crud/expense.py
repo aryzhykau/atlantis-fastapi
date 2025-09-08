@@ -26,4 +26,7 @@ def create_expense_type(db: Session, expense_type: ExpenseTypeCreate) -> Expense
     return db_expense_type
 
 def get_expense_types(db: Session, skip: int = 0, limit: int = 100) -> List[ExpenseType]:
-    return db.query(ExpenseType).offset(skip).limit(limit).all() 
+    return db.query(ExpenseType).offset(skip).limit(limit).all()
+
+def get_expense_type_by_name(db: Session, name: str) -> Optional[ExpenseType]:
+    return db.query(ExpenseType).filter(ExpenseType.name == name).first() 

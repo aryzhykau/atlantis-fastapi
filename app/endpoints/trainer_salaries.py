@@ -1,14 +1,19 @@
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from datetime import datetime, date
+from typing import Optional
 
 from app import crud
+from app.auth.jwt_handler import verify_jwt_token
 from app.dependencies import get_db
 from app.schemas.trainer_training_type_salary import (
     TrainerTrainingTypeSalaryCreate,
     TrainerTrainingTypeSalaryResponse,
     TrainerTrainingTypeSalaryUpdate,
 )
+from app.schemas.user import UserRole
+from app.services.trainer_salary import TrainerSalaryService
 
 router = APIRouter()
 
@@ -68,3 +73,120 @@ def update_trainer_salary(
 def delete_trainer_salary(salary_id: int, db: Session = Depends(get_db)):
     crud.trainer_training_type_salary.delete_trainer_training_type_salary(db, salary_id=salary_id)
     return
+
+
+# New endpoints for cancellation-based salary logic
+
+@router.get(
+    "/trainers/{trainer_id}/salary-summary",
+    summary="Get trainer salary summary for a period"
+)
+def get_trainer_salary_summary(
+    trainer_id: int,
+    start_date: date = Query(..., description="Start date for salary period"),
+    end_date: date = Query(..., description="End date for salary period"),
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Get trainer salary summary for a specific period.
+    
+    Shows:
+    - Fixed salary information
+    - Individual training payments
+    - Total compensation breakdown
+    """
+    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators and trainers can view salary information"
+        )
+    
+    # Trainers can only view their own salary
+    if current_user["role"] == UserRole.TRAINER and current_user["id"] != trainer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Trainers can only view their own salary information"
+        )
+    
+    service = TrainerSalaryService(db)
+    
+    try:
+        # Convert dates to datetime for the service
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        end_datetime = datetime.combine(end_date, datetime.max.time())
+        
+        summary = service.get_trainer_salary_summary(
+            trainer_id=trainer_id,
+            start_date=start_datetime,
+            end_date=end_datetime
+        )
+        
+        return summary
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving salary summary: {str(e)}")
+
+
+@router.post(
+    "/trainings/{training_id}/calculate-salary",
+    summary="Calculate trainer salary for training cancellation"
+)
+def calculate_training_salary(
+    training_id: int,
+    cancelled_student_id: int,
+    cancellation_time: datetime,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Calculate trainer salary eligibility for a specific training cancellation.
+    
+    This is a preview/calculation endpoint that doesn't create actual expenses.
+    Useful for testing the salary logic.
+    """
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators can calculate salary scenarios"
+        )
+    
+    service = TrainerSalaryService(db)
+    
+    try:
+        # Get training to build training datetime
+        from app.crud import real_training as real_training_crud
+        training = real_training_crud.get_real_training(db, training_id)
+        if not training:
+            raise HTTPException(status_code=404, detail="Training not found")
+            
+        training_datetime = datetime.combine(training.training_date, training.start_time)
+        
+        # Calculate salary decision without creating expenses
+        salary_decision = service.financial_service.calculate_trainer_salary_for_cancellation(
+            training_id=training_id,
+            cancelled_student_id=cancelled_student_id,
+            cancellation_time=cancellation_time,
+            training_start_datetime=training_datetime
+        )
+        
+        # Get trainer salary amount for context
+        trainer_salary = service._get_trainer_training_salary(training.responsible_trainer_id, training_id)
+        
+        return {
+            "training_id": training_id,
+            "trainer_id": training.responsible_trainer_id,
+            "cancelled_student_id": cancelled_student_id,
+            "cancellation_time": cancellation_time,
+            "training_datetime": training_datetime,
+            "salary_decision": salary_decision,
+            "potential_salary_amount": trainer_salary,
+            "would_create_expense": salary_decision["should_receive_salary"] and trainer_salary > 0
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating salary: {str(e)}")

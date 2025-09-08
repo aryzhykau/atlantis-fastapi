@@ -88,7 +88,7 @@ class DailyOperationsService:
         for training in trainings_today:
             if training.processed_at is None:
                 logger.info(f"Processing training ID: {training.id}")
-                self.training_processing_service._process_training(training)
+                self.training_processing_service._process_training(self.db, training)
                 processed_count += 1
             else:
                 logger.info(

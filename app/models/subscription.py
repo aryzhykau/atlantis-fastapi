@@ -67,9 +67,8 @@ class StudentSubscription(Base):
     @status.expression
     def status(cls):
         """SQL expression для status с учетом временных зон"""
-        # Используем func.datetime('now') для совместимости с SQLite
-        # В PostgreSQL это тоже работает
-        now = func.datetime('now')
+        # Используем func.now() для PostgreSQL
+        now = func.now()
         
         return case(
             (now < cls.start_date, "pending"),
