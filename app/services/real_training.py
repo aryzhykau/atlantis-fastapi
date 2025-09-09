@@ -320,6 +320,16 @@ class RealTrainingService:
         if not training:
             raise TrainingNotFound("Тренировка не найдена.")
 
+        # Check capacity limits
+        if training.training_type.max_participants:
+            current_active_students = session.query(RealTrainingStudent).filter(
+                RealTrainingStudent.real_training_id == training_id,
+                ~RealTrainingStudent.status.in_([AttendanceStatus.CANCELLED_SAFE, AttendanceStatus.CANCELLED_PENALTY])
+            ).count()
+            
+            if current_active_students >= training.training_type.max_participants:
+                raise ValueError(f"Тренировка заполнена. Максимальное количество участников: {training.training_type.max_participants}")
+
         if training.training_type.is_subscription_only:
             active_subscription = self.subscription_service.get_active_subscription(session, student.id) # Use service method
 
