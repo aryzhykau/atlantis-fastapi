@@ -224,7 +224,7 @@ def add_student_to_training_db(
         real_training_id=training_id,
         student_id=student_data.student_id,
         template_student_id=student_data.template_student_id,
-        status=AttendanceStatus.PRESENT  # По умолчанию - присутствовал
+        status=AttendanceStatus.REGISTERED  # По умолчанию - зарегистрирован
     )
     db.add(db_student)
     db.commit()
@@ -391,7 +391,7 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
                         real_training_id=new_training.id,
                         student_id=template_student.student_id,
                         template_student_id=template_student.id,
-                        status=AttendanceStatus.PRESENT  # По умолчанию - присутствовал
+                        status=AttendanceStatus.REGISTERED  # По умолчанию - зарегистрирован
                     )
                     db.add(student_training)
                     added_students_count += 1
