@@ -143,9 +143,9 @@ def create_training_student_template(db: Session, student_template_data: Trainin
             status_code=400,
             detail=f"Cannot add student. Maximum number of participants ({max_participants}) for this training type in this template has been reached."
         )
-    # Валидация: дата не может быть в прошлом
-    if student_template_data.start_date < date.today():
-        raise ValueError("Дата начала не может быть в прошлом")
+    # Валидация убрана: start_date может быть исторической для дублирования шаблонов
+    # if student_template_data.start_date < date.today():
+    #     raise ValueError("Дата начала не может быть в прошлом")
     db_student_template = TrainingStudentTemplate(
         training_template_id=student_template_data.training_template_id,
         student_id=student_template_data.student_id,
