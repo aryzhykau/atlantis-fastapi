@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
-from app.auth.jwt_handler import verify_jwt_token
 from app.models import User, UserRole
 from app.schemas.training_template import (
     TrainingStudentTemplateCreate,
@@ -24,10 +23,8 @@ router = APIRouter(prefix="/training_student_templates", tags=["Training Student
 @router.get("/", response_model=list[TrainingStudentTemplateResponse])
 def read_training_student_templates(
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user: User = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     return get_training_student_templates(db=db)
 
 
@@ -36,10 +33,8 @@ def read_training_student_templates(
 def read_training_student_template(
     student_template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user: User = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     student_template = get_training_student_template_by_id(db=db, student_template_id=student_template_id)
     if not student_template:
         raise HTTPException(status_code=404, detail="Training student template not found")
@@ -51,10 +46,8 @@ def read_training_student_template(
 def create_training_student_template_endpoint(
     training_student_template: TrainingStudentTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user: User = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     return create_training_student_template(db=db, student_template_data=training_student_template)
 
 
@@ -64,10 +57,8 @@ def update_training_student_template_endpoint(
     student_template_id: int,
     training_student_template: TrainingStudentTemplateUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user: User = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     updated_student_template = update_training_student_template(
         db=db, student_template_id=student_template_id, update_data=training_student_template
     )
@@ -81,10 +72,8 @@ def update_training_student_template_endpoint(
 def delete_training_student_template_endpoint(
     student_template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user: User = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     deleted_student_template = delete_training_student_template(db=db, student_template_id=student_template_id)
     if not deleted_student_template:
         raise HTTPException(status_code=404, detail="Training student template not found")
