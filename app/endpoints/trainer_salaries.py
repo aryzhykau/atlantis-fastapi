@@ -5,7 +5,7 @@ from datetime import datetime, date
 from typing import Optional
 
 from app import crud
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.trainer_training_type_salary import (
     TrainerTrainingTypeSalaryCreate,
@@ -85,7 +85,7 @@ def get_trainer_salary_summary(
     trainer_id: int,
     start_date: date = Query(..., description="Start date for salary period"),
     end_date: date = Query(..., description="End date for salary period"),
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -96,11 +96,6 @@ def get_trainer_salary_summary(
     - Individual training payments
     - Total compensation breakdown
     """
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only administrators and trainers can view salary information"
-        )
     
     # Trainers can only view their own salary
     if current_user["role"] == UserRole.TRAINER and current_user["id"] != trainer_id:
@@ -138,7 +133,7 @@ def calculate_training_salary(
     training_id: int,
     cancelled_student_id: int,
     cancellation_time: datetime,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -147,11 +142,6 @@ def calculate_training_salary(
     This is a preview/calculation endpoint that doesn't create actual expenses.
     Useful for testing the salary logic.
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Only administrators can calculate salary scenarios"
-        )
     
     service = TrainerSalaryService(db)
     

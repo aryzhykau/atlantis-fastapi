@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.payment import (
     PaymentCreate, 
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/payments", tags=["Payments"])
 @router.post("/", response_model=PaymentResponse)
 def create_payment(
     payment: PaymentCreate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -50,7 +50,7 @@ def create_payment(
 def get_filtered_payments(
     registered_by_me: Optional[bool] = Query(None, description="Только платежи текущего пользователя"),
     period: str = Query("week", description="Период: week/2weeks"),
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -85,12 +85,12 @@ def get_payment_history(
     description_search: str = Query(None, description="Поиск по описанию"),
     skip: int = Query(0, description="Количество записей для пропуска"),
     limit: int = Query(100, description="Максимальное количество записей"),
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Получение истории всех транзакций с фильтрами и пагинацией.
-    Только для админов.
+    Для админов и владельцев.
     """
     # This logic should be moved to a service if it involves complex business rules
     # For now, keeping it as is, but it's a candidate for refactoring.
@@ -125,17 +125,15 @@ def get_payment_history(
 @router.delete("/{payment_id}", response_model=PaymentResponse)
 def cancel_payment(
     payment_id: int,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Отмена платежа.
-    Только для админов.
+    Для админов и владельцев.
     """
     service = FinancialService(db)
     try:
-        if current_user["role"] != "ADMIN":
-            raise HTTPException(status_code=403, detail="Forbidden")
         return service.cancel_standalone_payment(
             payment_id=payment_id,
             cancelled_by_id=current_user["id"]
@@ -151,12 +149,12 @@ def cancel_payment(
 @router.get("/{payment_id}", response_model=PaymentResponse)
 def get_payment(
     payment_id: int,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Получение платежа по ID.
-    Доступно админам и тренерам.
+    Доступно админам, тренерам и владельцам.
     """
     # Direct CRUD call as no business logic is involved
     payment = crud_payment.get_payment(db, payment_id)
@@ -169,12 +167,12 @@ def get_payment(
 def get_payments(
     skip: int = 0,
     limit: int = 100,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Получение списка всех платежей.
-    Доступно админам и тренерам.
+    Доступно админам, тренерам и владельцам.
     """
     # Direct CRUD call as no business logic is involved
     return crud_payment.get_payments(db, skip=skip, limit=limit)
@@ -186,12 +184,12 @@ def get_client_payments(
     cancelled_status: str = "all",
     skip: int = 0,
     limit: int = 100,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Получение списка платежей клиента.
-    Доступно админам и тренерам.
+    Доступно админам, тренерам и владельцам.
     
     Args:
         client_id: ID клиента
@@ -215,12 +213,12 @@ def get_client_payments(
 @router.get("/client/{client_id}/balance", response_model=ClientBalanceResponse)
 def get_client_balance(
     client_id: int,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Получение текущего баланса клиента.
-    Доступно админам и тренерам.
+    Доступно админам, тренерам и владельцам.
     """
     # Direct CRUD call as no business logic is involved
     user = crud_user.get_user_by_id(db, client_id)

@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.models import InvoiceStatus, InvoiceType
 from app.schemas.invoice import (
@@ -26,7 +26,7 @@ def get_invoices(
 
     skip: int = 0,
     limit: int = 100,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user()),
     db: Session = Depends(get_db)
 ):
     """
@@ -53,7 +53,7 @@ def get_invoices(
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
 def get_invoice(
     invoice_id: int,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user()),
     db: Session = Depends(get_db)
 ):
     """
@@ -73,7 +73,7 @@ def get_student_invoices(
     status: Optional[InvoiceStatus] = None,
     skip: int = 0,
     limit: int = 100,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user()),
     db: Session = Depends(get_db)
 ):
     """
@@ -96,7 +96,7 @@ def get_client_invoices(
     status: Optional[InvoiceStatus] = None,
     skip: int = 0,
     limit: int = 100,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user()),
     db: Session = Depends(get_db)
 ):
     """
@@ -116,7 +116,7 @@ def get_client_invoices(
 @router.post("/subscription", response_model=InvoiceResponse)
 def create_subscription_invoice(
     invoice_data: SubscriptionInvoiceCreate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user()),
     db: Session = Depends(get_db)
 ):
     """
@@ -140,7 +140,7 @@ def create_subscription_invoice(
 @router.post("/training", response_model=InvoiceResponse)
 def create_training_invoice(
     invoice_data: TrainingInvoiceCreate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user()),
     db: Session = Depends(get_db)
 ):
     """
@@ -163,12 +163,12 @@ def create_training_invoice(
 @router.post("/{invoice_id}/cancel", response_model=InvoiceResponse)
 def cancel_invoice(
     invoice_id: int,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Отмена инвойса.
-    Только для админов.
+    Только для админов и владельцев.
     """
     service = FinancialService(db)
     try:

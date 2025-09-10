@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import UserRole
 from app.models.client_contact_task import ClientContactReason as ModelReason, ClientContactStatus as ModelStatus
@@ -36,10 +36,8 @@ def list_client_contact_tasks(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
 ):
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Only admins can view contact tasks")
     service = ClientContactService(db)
     items = service.list_tasks(
         status=_to_model_status(status),
@@ -55,10 +53,8 @@ def list_client_contact_tasks(
 def create_client_contact_task(
     data: ClientContactTaskCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
 ):
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Only admins can create contact tasks")
     service = ClientContactService(db)
     task = service.create_task(
         client_id=data.client_id,
@@ -77,10 +73,8 @@ def update_client_contact_task(
     task_id: int,
     data: ClientContactTaskUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
 ):
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Only admins can update contact tasks")
     service = ClientContactService(db)
 
     task = None

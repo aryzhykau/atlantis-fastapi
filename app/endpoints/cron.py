@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.dependencies import get_db
 from app.core.security import verify_api_key
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.models import User, UserRole
 from app.services.subscription import SubscriptionService
 from app.services.training_processing import TrainingProcessingService
@@ -19,12 +19,10 @@ router = APIRouter(prefix="/cron", tags=["cron"])
 
 @router.post("/auto-mark-attendance")
 def auto_mark_attendance_endpoint(
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db),
 ):
     """Автоматическая отметка посещаемости"""
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
         training_processing_service = TrainingProcessingService(db)
@@ -84,12 +82,10 @@ def auto_unfreeze_subscriptions_endpoint(db: Session = Depends(get_db)):
 
 @router.post("/process-invoices")
 def process_invoices_endpoint(
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db),
 ):
     """Обработка инвойсов"""
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
         financial_service = FinancialService(db)

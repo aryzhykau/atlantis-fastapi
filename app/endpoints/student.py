@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import UserRole, StatusUpdate, StudentStatusResponse
 from app.schemas.student import (StudentCreate, StudentResponse, StudentUpdate,
@@ -23,12 +23,9 @@ router = APIRouter(prefix="/students", tags=["Students"])
 @router.post("/", response_model=StudentResponse)
 def create_student_endpoint(
         student_data: StudentCreate,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
-    # Проверка прав доступа
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Создание студента
     try:
@@ -41,12 +38,9 @@ def create_student_endpoint(
 # Получение списка студентов
 @router.get("/", response_model=list[StudentResponse])
 def get_students_endpoint(
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
-    # Проверка прав доступа
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Получение списка студентов
     students = get_all_students(db)
@@ -57,13 +51,9 @@ def get_students_endpoint(
 @router.get("/{student_id}", response_model=StudentResponse)
 def get_student_endpoint(
         student_id: int,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
-    # Проверка прав доступа
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
     # Получение студента
     student = get_student_by_id(db, student_id)
     if not student:
@@ -76,12 +66,9 @@ def get_student_endpoint(
 def update_student_endpoint(
         student_id: int,
         student_data: StudentUpdate,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
-    # Проверка прав доступа
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Обновление данных студента
     try:
@@ -99,15 +86,13 @@ def update_student_endpoint(
 def update_student_status_endpoint(
     student_id: int,
     status_update: StatusUpdate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Обновляет статус студента.
     При попытке активации проверяет статус родительского клиента.
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Только администратор может изменять статус студентов")
     
     try:
         student = student_service.update_student_status(db, student_id, status_update.is_active)
@@ -129,13 +114,10 @@ def update_student_status_endpoint(
 @router.get("/client/{client_id}", response_model=list[StudentResponse])
 def get_students_by_client_endpoint(
     client_id: int,
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db),
 ):
     """Получение списка студентов для конкретного клиента"""
-    # Проверка прав доступа
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Проверяем существование клиента
     client = db.query(User).filter(User.id == client_id).first()
@@ -151,13 +133,10 @@ def get_students_by_client_endpoint(
 @router.get("/{student_id}/payments", response_model=list[PaymentHistoryResponse])
 def get_student_payments_endpoint(
     student_id: int,
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db),
 ):
     """Получение истории платежей для конкретного студента"""
-    # Проверка прав доступа
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
 
     # Проверяем существование студента
     student = get_student_by_id(db, student_id)
@@ -175,15 +154,13 @@ def get_student_payments_endpoint(
 @router.get("/trainer/{trainer_id}", response_model=list[StudentResponse])
 def get_students_by_trainer_endpoint(
     trainer_id: int,
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db),
 ):
     """
     Получение всех активных студентов для регистрации платежей
     Доступно только тренерам и админам
     """
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(status_code=403, detail="Forbidden")
     if current_user["role"] == UserRole.TRAINER and current_user["id"] != trainer_id:
         raise HTTPException(status_code=403, detail="Можно смотреть только своих студентов")
     
