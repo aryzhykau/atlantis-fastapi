@@ -10,6 +10,7 @@ class UserRole(PyEnum):
     CLIENT = "CLIENT"
     TRAINER = "TRAINER"
     ADMIN = "ADMIN"
+    OWNER = "OWNER"
 
 
 class User(Base):
@@ -72,8 +73,8 @@ class User(Base):
     # Валидация: активен / неактивен только для клиентов и тренеров
     @validates("is_active")
     def validate_is_active(self, key, value):
-        if self.role == UserRole.ADMIN:
-            raise ValueError("Поле 'is_active' не применяется для пользователей с ролью 'ADMIN'.")
+        if self.role in (UserRole.ADMIN, UserRole.OWNER):
+            raise ValueError("Поле 'is_active' не применяется для пользователей с ролью 'ADMIN' или 'OWNER'.")
         return value
 
     # Валидация: дата рождения не может быть в будущем

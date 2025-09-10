@@ -11,21 +11,10 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_db
 from app.auth.auth import router as auth_router
 from app.endpoints import (
-    client,
-    student,
-    trainer,
-    subscription,
-    real_trainings,
-    training_type,
-    payment,
-    invoice,
-    cron,
-    health,
-    expense,
-    training_template,
-    training_student_template,
-    user,
-    trainer_salaries
+    user, health, client, student, trainer, subscription, real_trainings,
+    training_type, payment, invoice, cron, expense, training_template,
+    training_student_template, trainer_salaries, client_contacts, stats,
+    admin_management
 )
 from app.endpoints import client_contacts
 from app.endpoints import stats
@@ -86,6 +75,7 @@ app.include_router(training_student_template.router)
 app.include_router(trainer_salaries.router)
 app.include_router(client_contacts.router)
 app.include_router(stats.router)
+app.include_router(admin_management.router)
 
 
 @app.get("/")

@@ -61,8 +61,8 @@ def get_overview_stats(
     db: Session = Depends(get_db),
     current_user=Depends(verify_jwt_token),
 ) -> Dict[str, Any]:
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Admin access required")
+    if current_user["role"] not in (UserRole.ADMIN, UserRole.OWNER):
+        raise HTTPException(status_code=403, detail="Admin or Owner access required")
 
     now = datetime.now(timezone.utc)
     # Defaults: last 12 months
@@ -163,6 +163,182 @@ def get_overview_stats(
         "revenue_series": revenue_series,
         "expense_series": expense_series,
         "trainings_series": trainings_series,
+    }
+
+
+@router.get("/admin-dashboard")
+def get_admin_dashboard_stats(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    interval: str = "month",
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_jwt_token),
+) -> Dict[str, Any]:
+    """Admin dashboard with non-financial metrics (ADMIN + OWNER access)"""
+    if current_user["role"] not in (UserRole.ADMIN, UserRole.OWNER):
+        raise HTTPException(status_code=403, detail="Admin or Owner access required")
+
+    now = datetime.now(timezone.utc)
+    end_d = _parse_date(end_date) or now.date()
+    start_d = _parse_date(start_date) or (date(end_d.year - (1 if end_d.month < 12 else 0), (end_d.month % 12) + 1, 1) - timedelta(days=365))
+    
+    if start_d > end_d:
+        start_d, end_d = end_d, start_d
+    if interval not in ("day", "week", "month"):
+        interval = "month"
+        
+    labels, ranges = _generate_buckets(start_d, end_d, interval)
+
+    # Non-financial metrics only
+    total_clients = db.query(User).filter(User.role == UserRole.CLIENT).count()
+    total_students = db.query(Student).count()
+    
+    trainings_in_month = (
+        db.query(RealTraining)
+        .filter(RealTraining.training_date >= date(now.year, now.month, 1))
+        .filter(RealTraining.training_date <= end_d)
+        .count()
+    )
+
+    trainings_in_year = (
+        db.query(RealTraining)
+        .filter(extract('year', RealTraining.training_date) == now.year)
+        .count()
+    )
+
+    # Training series data
+    trainings_series = [0 for _ in labels]
+    tr_rows = (
+        db.query(RealTraining.training_date)
+        .filter(RealTraining.training_date >= start_d)
+        .filter(RealTraining.training_date <= end_d)
+        .all()
+    )
+    for tr_d, in tr_rows:
+        for idx, (r_start, r_end) in enumerate(ranges):
+            if r_start <= tr_d <= r_end:
+                trainings_series[idx] += 1
+                break
+
+    return {
+        "total_clients": total_clients,
+        "total_students": total_students,
+        "trainings_in_month": trainings_in_month,
+        "trainings_in_year": trainings_in_year,
+        "labels": labels,
+        "trainings_series": trainings_series,
+    }
+
+
+@router.get("/owner-dashboard")
+def get_owner_dashboard_stats(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    interval: str = "month",
+    db: Session = Depends(get_db),
+    current_user=Depends(verify_jwt_token),
+) -> Dict[str, Any]:
+    """Owner dashboard with full financial metrics (OWNER only)"""
+    if current_user["role"] != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Owner access required")
+
+    now = datetime.now(timezone.utc)
+    end_d = _parse_date(end_date) or now.date()
+    start_d = _parse_date(start_date) or (date(end_d.year - (1 if end_d.month < 12 else 0), (end_d.month % 12) + 1, 1) - timedelta(days=365))
+    
+    if start_d > end_d:
+        start_d, end_d = end_d, start_d
+    if interval not in ("day", "week", "month"):
+        interval = "month"
+        
+    labels, ranges = _generate_buckets(start_d, end_d, interval)
+
+    # All metrics including financial
+    total_clients = db.query(User).filter(User.role == UserRole.CLIENT).count()
+    total_students = db.query(Student).count()
+    
+    trainings_in_month = (
+        db.query(RealTraining)
+        .filter(RealTraining.training_date >= date(now.year, now.month, 1))
+        .filter(RealTraining.training_date <= end_d)
+        .count()
+    )
+
+    trainings_in_year = (
+        db.query(RealTraining)
+        .filter(extract('year', RealTraining.training_date) == now.year)
+        .count()
+    )
+
+    # Financial metrics
+    revenue_series = [0.0 for _ in labels]
+    expense_series = [0.0 for _ in labels]
+    trainings_series = [0 for _ in labels]
+
+    # Revenue calculation
+    inv_rows = (
+        db.query(Invoice.paid_at, Invoice.created_at, Invoice.amount, Invoice.status)
+        .filter(Invoice.status == 'PAID')
+        .filter(func.coalesce(Invoice.paid_at, Invoice.created_at) >= datetime.combine(start_d, datetime.min.time(), tzinfo=timezone.utc))
+        .filter(func.coalesce(Invoice.paid_at, Invoice.created_at) <= datetime.combine(end_d, datetime.max.time(), tzinfo=timezone.utc))
+        .all()
+    )
+    for paid_at, created_at, amount, _ in inv_rows:
+        dt = paid_at or created_at
+        d = dt.date()
+        for idx, (r_start, r_end) in enumerate(ranges):
+            if r_start <= d <= r_end:
+                revenue_series[idx] += float(amount or 0)
+                break
+
+    # Expenses calculation
+    exp_rows = (
+        db.query(Expense.expense_date, Expense.amount)
+        .filter(Expense.expense_date >= datetime.combine(start_d, datetime.min.time(), tzinfo=timezone.utc))
+        .filter(Expense.expense_date <= datetime.combine(end_d, datetime.max.time(), tzinfo=timezone.utc))
+        .all()
+    )
+    for exp_dt, amount in exp_rows:
+        d = exp_dt.date()
+        for idx, (r_start, r_end) in enumerate(ranges):
+            if r_start <= d <= r_end:
+                expense_series[idx] += float(amount or 0)
+                break
+
+    # Training series
+    tr_rows = (
+        db.query(RealTraining.training_date)
+        .filter(RealTraining.training_date >= start_d)
+        .filter(RealTraining.training_date <= end_d)
+        .all()
+    )
+    for tr_d, in tr_rows:
+        for idx, (r_start, r_end) in enumerate(ranges):
+            if r_start <= tr_d <= r_end:
+                trainings_series[idx] += 1
+                break
+
+    # Calculate additional owner metrics
+    total_revenue = sum(revenue_series)
+    total_expenses = sum(expense_series)
+    net_profit = total_revenue - total_expenses
+    
+    # Average revenue per client
+    avg_revenue_per_client = total_revenue / total_clients if total_clients > 0 else 0
+
+    return {
+        "total_clients": total_clients,
+        "total_students": total_students,
+        "trainings_in_month": trainings_in_month,
+        "trainings_in_year": trainings_in_year,
+        "labels": labels,
+        "revenue_series": revenue_series,
+        "expense_series": expense_series,
+        "trainings_series": trainings_series,
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "net_profit": net_profit,
+        "avg_revenue_per_client": avg_revenue_per_client,
     }
 
 
