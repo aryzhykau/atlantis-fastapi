@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -131,15 +131,27 @@ def add_subscription_to_student(
 @router.get("/student/{student_id}", response_model=List[StudentSubscriptionResponse])
 def get_student_subscriptions(
     student_id: int,
+    status: Optional[str] = None,
+    include_expired: bool = True,
     current_user = Depends(verify_jwt_token),
     db: Session = Depends(get_db)
 ):
     """
     Получение списка абонементов студента.
     Доступно всем авторизованным пользователям.
+    
+    Args:
+        student_id: ID студента
+        status: Фильтр по статусу ("active", "pending", "frozen", "expired")
+        include_expired: Включать ли истекшие абонементы (по умолчанию True для истории)
     """
-    # Direct CRUD call as no business logic is involved
-    return crud_subscription.get_active_student_subscriptions(db, student_id)
+    # Use the full subscription function to get history
+    return crud_subscription.get_student_subscriptions(
+        db, 
+        student_id, 
+        status=status, 
+        include_expired=include_expired
+    )
 
 
 @router.patch("/student/{subscription_id}/auto-renewal", response_model=StudentSubscriptionResponse)
