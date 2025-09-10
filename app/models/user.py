@@ -71,11 +71,7 @@ class User(Base):
         return value
 
     # Валидация: активен / неактивен только для клиентов и тренеров
-    @validates("is_active")
-    def validate_is_active(self, key, value):
-        if self.role in (UserRole.ADMIN, UserRole.OWNER):
-            raise ValueError("Поле 'is_active' не применяется для пользователей с ролью 'ADMIN' или 'OWNER'.")
-        return value
+    # Note: Removed validation as ADMIN and OWNER users also need is_active status for system management
 
     # Валидация: дата рождения не может быть в будущем
     @validates("date_of_birth")
