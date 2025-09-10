@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.models import User, UserRole
 from app.schemas.training_template import (
     TrainingTemplateCreate,
@@ -25,10 +25,8 @@ router = APIRouter(prefix="/training_templates", tags=["Training Templates"])
 def read_training_templates(
     day_number: int = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     return get_training_templates(db=db, day_number=day_number)
 
 
@@ -37,10 +35,8 @@ def read_training_templates(
 def read_training_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     template = get_training_template_by_id(db=db, template_id=template_id)
     if not template:
         raise HTTPException(status_code=404, detail="Training template not found")
@@ -52,10 +48,8 @@ def read_training_template(
 def create_training_template_endpoint(
     training_template: TrainingTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     return create_training_template(db=db, training_template=training_template)
 
 
@@ -65,10 +59,8 @@ def update_training_template_endpoint(
     template_id: int,
     training_template: TrainingTemplateUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     updated_template = update_training_template(db=db, template_id=template_id, update_data=training_template)
     if not updated_template:
         raise HTTPException(status_code=404, detail="Training template not found")
@@ -80,10 +72,8 @@ def update_training_template_endpoint(
 def delete_training_template_endpoint(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_jwt_token)
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"]))
 ):
-    if current_user["role"] != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
     deleted_template = delete_training_template(db=db, template_id=template_id)
     if not deleted_template:
         raise HTTPException(status_code=404, detail="Training template not found")

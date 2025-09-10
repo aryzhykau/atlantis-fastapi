@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import date
 from typing import List, Optional
 
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.core.security import verify_api_key
 from app.dependencies import get_db
 from app.schemas.real_training import (
@@ -44,7 +44,7 @@ def get_trainings_endpoint(
     training_type_id: Optional[int] = None,
     include_cancelled: bool = False,
     with_students: bool = False,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -55,12 +55,6 @@ def get_trainings_endpoint(
     - С учетом или без учета отмененных тренировок (include_cancelled)
     - С загрузкой или без загрузки студентов (with_students)
     """
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администраторы и тренеры могут просматривать тренировки"
-        )
-
     # Если текущий пользователь - тренер, он может видеть только свои тренировки
     if current_user["role"] == UserRole.TRAINER:
         trainer_id = current_user["id"]
@@ -89,15 +83,10 @@ def get_trainings_endpoint(
 @router.get("/{training_id}", response_model=RealTrainingResponse)
 def get_training_endpoint(
     training_id: int,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """Получает информацию о конкретной тренировке по её ID."""
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администраторы и тренеры могут просматривать тренировки"
-        )
 
     training = get_real_training(db, training_id)
     if not training:
@@ -118,19 +107,13 @@ def get_training_endpoint(
 @router.post("/", response_model=RealTrainingResponse, status_code=201)
 def create_training_endpoint(
     training_data: RealTrainingCreate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Создает новую реальную тренировку.
     Если указан template_id, автоматически копирует студентов из шаблона.
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администратор может создавать тренировки"
-        )
-
     try:
         return create_real_training(db, training_data)
     except Exception as e:
@@ -142,19 +125,13 @@ def create_training_endpoint(
 def update_training_endpoint(
     training_id: int,
     training_data: RealTrainingUpdate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Обновляет информацию о тренировке.
     При указании причины отмены тренировка помечается как отмененная.
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администратор может обновлять тренировки"
-        )
-
     training = update_real_training(db, training_id, training_data)
     if not training:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
@@ -167,19 +144,13 @@ def delete_training_endpoint(
     training_id: int,
     delete_future: bool = False,
     template_id: Optional[int] = None,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Удаляет тренировку.
     При delete_future=True и указанном template_id удаляет все будущие тренировки из этого шаблона.
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администратор может удалять тренировки"
-        )
-
     success = delete_real_training(db, training_id)
     if not success:
         raise HTTPException(status_code=404, detail="Тренировка не найдена")
@@ -191,15 +162,10 @@ def delete_training_endpoint(
 def add_student_endpoint(
     training_id: int,
     student_data: RealTrainingStudentCreate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """Добавляет студента на тренировку, используя сервисный слой."""
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администраторы и тренеры могут добавлять студентов"
-        )
 
     service = RealTrainingService(db)
     # Проверка прав тренера внутри сервиса не нужна, т.к. это логика эндпоинта
@@ -226,15 +192,10 @@ def update_attendance_endpoint(
     training_id: int,
     student_id: int,
     attendance_data: RealTrainingStudentUpdate,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """Обновляет статус посещения студента, используя сервисный слой."""
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администраторы и тренеры могут отмечать посещаемость"
-        )
 
     # Проверка прав тренера
     training = get_real_training(db, training_id)
@@ -267,18 +228,13 @@ def remove_student_endpoint(
     student_id: int,
     remove_future: bool = False,
     template_id: Optional[int] = None,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
     Удаляет студента с тренировки.
     При remove_future=True и указанном template_id удаляет студента со всех будущих тренировок из шаблона.
     """
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администраторы и тренеры могут удалять студентов"
-        )
 
     training = get_real_training(db, training_id)
     if not training:
@@ -361,7 +317,7 @@ def cancel_student_endpoint(
     training_id: int,
     student_id: int,
     cancellation_data: StudentCancellationRequest,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -369,11 +325,6 @@ def cancel_student_endpoint(
     - Время до начала (минимум 12 часов)
     - Лимит переносов (максимум 3 в месяц)
     """
-    if current_user["role"] not in [UserRole.ADMIN, UserRole.TRAINER]:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администраторы и тренеры могут отменять участие студентов"
-        )
 
     service = RealTrainingService(db)
     training = service._get_training(db, training_id)
@@ -397,7 +348,7 @@ def cancel_student_endpoint(
 async def cancel_training_endpoint(
     training_id: int,
     cancellation_data: TrainingCancellationRequest,
-    current_user = Depends(verify_jwt_token),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
@@ -409,11 +360,5 @@ async def cancel_training_endpoint(
     3. Запуск финансовых процессов (если process_refunds=True)
     4. Закрытие тренировки
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Только администратор может отменять тренировки"
-        )
-
     service = RealTrainingService(db)
     return await service.cancel_training(training_id, cancellation_data) 

@@ -9,3 +9,6 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Import simple role-based dependency
+from app.auth.permissions import get_current_user

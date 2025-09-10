@@ -1,9 +1,13 @@
+"""
+Admin Management endpoints with new role-based authorization system.
+This demonstrates how to use the new role dependencies.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from app.auth.permissions import get_current_user
-from app.dependencies import get_db
+from app.dependencies import get_db, RequireOwner
 from app.schemas.user import (
     AdminCreate, AdminUpdate, AdminResponse, AdminStatusUpdate, 
     AdminsList, UserRole
@@ -18,11 +22,10 @@ router = APIRouter(prefix="/admin-management", tags=["Admin Management"])
 
 @router.get("/admins", response_model=AdminsList)
 def get_admins_endpoint(
-    current_user = Depends(get_current_user(["OWNER"])), 
+    current_user = Depends(RequireOwner),  # Clean and simple role check
     db: Session = Depends(get_db)
 ):
     """Get all administrators (OWNER only)"""
-    
     admins = get_all_admins(db)
     return AdminsList(admins=admins)
 
@@ -30,11 +33,10 @@ def get_admins_endpoint(
 @router.get("/admins/{admin_id}", response_model=AdminResponse)
 def get_admin_endpoint(
     admin_id: int,
-    current_user = Depends(get_current_user(["OWNER"])),
+    current_user = Depends(RequireOwner),  # Role check handled by dependency
     db: Session = Depends(get_db)
 ):
     """Get administrator by ID (OWNER only)"""
-    
     admin = get_admin_by_id(db, admin_id)
     if not admin:
         raise HTTPException(status_code=404, detail="Administrator not found")
@@ -45,11 +47,10 @@ def get_admin_endpoint(
 @router.post("/admins", response_model=AdminResponse)
 def create_admin_endpoint(
     admin_data: AdminCreate,
-    current_user = Depends(get_current_user(["OWNER"])),
+    current_user = Depends(RequireOwner),  # Automatic role validation
     db: Session = Depends(get_db)
 ):
     """Create a new administrator (OWNER only)"""
-    
     # Check if admin with email already exists
     if admin_exists_by_email(db, admin_data.email):
         raise HTTPException(
@@ -68,11 +69,10 @@ def create_admin_endpoint(
 def update_admin_endpoint(
     admin_id: int,
     admin_data: AdminUpdate,
-    current_user = Depends(get_current_user(["OWNER"])),
+    current_user = Depends(RequireOwner),  # Clean dependency injection
     db: Session = Depends(get_db)
 ):
     """Update administrator information (OWNER only)"""
-    
     # Check if admin exists
     existing_admin = get_admin_by_id(db, admin_id)
     if not existing_admin:
@@ -99,11 +99,10 @@ def update_admin_endpoint(
 def update_admin_status_endpoint(
     admin_id: int,
     status_data: AdminStatusUpdate,
-    current_user = Depends(get_current_user(["OWNER"])),
+    current_user = Depends(RequireOwner),  # Role handled automatically
     db: Session = Depends(get_db)
 ):
     """Enable or disable administrator (OWNER only)"""
-    
     # Prevent self-deactivation
     if admin_id == current_user["id"] and not status_data.is_active:
         raise HTTPException(

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
 
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import UserRole
 from app.models import User, Student, RealTraining, Invoice, Expense
@@ -59,10 +59,8 @@ def get_overview_stats(
     end_date: str | None = None,
     interval: str = "month",  # day | week | month
     db: Session = Depends(get_db),
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
 ) -> Dict[str, Any]:
-    if current_user["role"] not in (UserRole.ADMIN, UserRole.OWNER):
-        raise HTTPException(status_code=403, detail="Admin or Owner access required")
 
     now = datetime.now(timezone.utc)
     # Defaults: last 12 months
@@ -172,11 +170,9 @@ def get_admin_dashboard_stats(
     end_date: str | None = None,
     interval: str = "month",
     db: Session = Depends(get_db),
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
 ) -> Dict[str, Any]:
     """Admin dashboard with non-financial metrics (ADMIN + OWNER access)"""
-    if current_user["role"] not in (UserRole.ADMIN, UserRole.OWNER):
-        raise HTTPException(status_code=403, detail="Admin or Owner access required")
 
     now = datetime.now(timezone.utc)
     end_d = _parse_date(end_date) or now.date()
@@ -236,11 +232,9 @@ def get_owner_dashboard_stats(
     end_date: str | None = None,
     interval: str = "month",
     db: Session = Depends(get_db),
-    current_user=Depends(verify_jwt_token),
+    current_user=Depends(get_current_user(["OWNER"])),
 ) -> Dict[str, Any]:
     """Owner dashboard with full financial metrics (OWNER only)"""
-    if current_user["role"] != UserRole.OWNER:
-        raise HTTPException(status_code=403, detail="Owner access required")
 
     now = datetime.now(timezone.utc)
     end_d = _parse_date(end_date) or now.date()

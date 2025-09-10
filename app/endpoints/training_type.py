@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.training_type import (
     TrainingTypeCreate,
@@ -28,16 +28,11 @@ router = APIRouter(prefix="/training_types", tags=["Training Types"])
 @router.post("/", response_model=TrainingTypeResponse)
 def create_training_type_endpoint(
         training_type_data: TrainingTypeCreate,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
     logger.debug(training_type_data)
     print(training_type_data)
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    print("adding")
-    new_training_type = create_training_type(db, training_type_data)
-    return new_training_type
 
 
 # Получение списка типов тренировок
@@ -45,7 +40,7 @@ def create_training_type_endpoint(
 def get_training_types_endpoint(
         skip: int = 0,
         limit: int = 10,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user()),
         db: Session = Depends(get_db),
 ):
     # Здесь доступ разрешен всем авторизованным пользователям
@@ -57,7 +52,7 @@ def get_training_types_endpoint(
 @router.get("/{training_type_id}", response_model=TrainingTypeResponse)
 def get_training_type_endpoint(
         training_type_id: int,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user()),
         db: Session = Depends(get_db),
 ):
     # Доступ разрешен всем авторизованным пользователям
@@ -72,11 +67,9 @@ def get_training_type_endpoint(
 def update_training_type_endpoint(
         training_type_id: int,
         training_type_data: TrainingTypeUpdate,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
     updated_training_type = update_training_type(db, training_type_id, training_type_data)
     if not updated_training_type:
         raise HTTPException(status_code=404, detail="Training type not found")
