@@ -100,3 +100,9 @@ def refresh_access_token(token: str) -> str:
     except JWTError as e:
         logger.error(f"Error during refresh token validation: {e}")
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token.")
+
+
+def is_admin_or_owner(user_role: str) -> bool:
+    """Helper function to check if user has admin or owner privileges"""
+    from app.schemas.user import UserRole
+    return user_role in (UserRole.ADMIN, UserRole.OWNER)

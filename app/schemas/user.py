@@ -9,6 +9,7 @@ class UserRole(str, Enum):
     CLIENT = "CLIENT"
     TRAINER = "TRAINER"
     ADMIN = "ADMIN"
+    OWNER = "OWNER"
 
 
 # General base schema (fields for all users)
@@ -198,6 +199,87 @@ class UserListResponse(BaseModel):
     role: UserRole
 
     model_config = {"from_attributes": True}
+
+
+# Admin Management Schemas
+class AdminCreate(BaseModel):
+    first_name: str = Field(..., min_length=2, max_length=50)
+    last_name: str = Field(..., min_length=2, max_length=50)
+    date_of_birth: date
+    email: EmailStr
+    phone_country_code: str = Field(..., min_length=1, max_length=4)
+    phone_number: str = Field(..., min_length=5, max_length=15)
+
+    @field_validator('phone_number')
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        if not v or not re.match(r'^[0-9]{5,15}$', v):
+            raise ValueError('Invalid phone number format. Must contain 5 to 15 digits')
+        return v
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_birth_date(cls, v: date) -> date:
+        if v > date.today():
+            raise ValueError('Date of birth cannot be in the future')
+        return v
+
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('Field cannot be empty')
+        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+', v):
+            raise ValueError('Name can only contain letters, spaces, and hyphens')
+        return v.strip()
+
+
+class AdminUpdate(BaseModel):
+    first_name: str | None = Field(None, min_length=2, max_length=50)
+    last_name: str | None = Field(None, min_length=2, max_length=50)
+    date_of_birth: date | None = None
+    email: EmailStr | None = None
+    phone_country_code: str | None = Field(None, min_length=1, max_length=4)
+    phone_number: str | None = Field(None, min_length=5, max_length=15)
+
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v: str | None) -> str | None:
+        if v is not None:
+            if not v.strip():
+                raise ValueError('Field cannot be empty')
+            if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\s-]+', v):
+                raise ValueError('Name can only contain letters, spaces, and hyphens')
+            return v.strip()
+        return v
+
+    @field_validator('phone_number')
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            if not re.match(r'^[0-9]{5,15}$', v):
+                raise ValueError('Invalid phone number format. Must contain 5 to 15 digits')
+        return v
+
+    @field_validator('date_of_birth')
+    @classmethod
+    def validate_birth_date(cls, v: date | None) -> date | None:
+        if v is not None and v > date.today():
+            raise ValueError('Date of birth cannot be in the future')
+        return v
+
+
+class AdminResponse(UserBase):
+    is_active: bool
+    deactivation_date: datetime | None = None
+
+
+class AdminStatusUpdate(BaseModel):
+    is_active: bool
+
+
+class AdminsList(BaseModel):
+    admins: list[AdminResponse]
 
 
 class UserUpdate(BaseModel):
