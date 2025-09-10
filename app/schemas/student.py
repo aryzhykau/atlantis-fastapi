@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, computed_field
 from datetime import date, datetime
 from typing import List, TYPE_CHECKING
 
@@ -55,6 +55,12 @@ class StudentUser(BaseModel):
     balance: float | None = None
 
     model_config = {"from_attributes": True}
+    
+    @computed_field
+    @property
+    def phone(self) -> str:
+        """Combined phone number for convenience"""
+        return f"{self.phone_country_code} {self.phone_number}"
 
 
 # Схема для обновления студента
