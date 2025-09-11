@@ -229,3 +229,37 @@ def unfreeze_subscription(
         raise HTTPException(status_code=400, detail=str(e))
     except SubscriptionError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/process-auto-renewals")
+def process_auto_renewals_endpoint(
+    days_back: int = 7,
+    current_user = Depends(verify_jwt_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually trigger auto-renewal processing for subscriptions.
+    Processes subscriptions that ended today or in the past X days.
+    Only for admins.
+    
+    Args:
+        days_back: How many days back to look for expired subscriptions (default: 7, max: 30)
+    """
+    if current_user["role"] != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can trigger auto-renewals")
+    
+    # Limit the lookback period for safety
+    if days_back > 30:
+        raise HTTPException(status_code=400, detail="Cannot look back more than 30 days")
+    
+    service = SubscriptionService(db)
+    try:
+        renewed_subscriptions = service.process_auto_renewals(days_back=days_back)
+        return {
+            "message": f"Successfully processed auto-renewals",
+            "days_back": days_back,
+            "renewals_processed": len(renewed_subscriptions),
+            "subscription_ids": [sub.id for sub in renewed_subscriptions]
+        }
+    except SubscriptionError as e:
+        raise HTTPException(status_code=500, detail=str(e))

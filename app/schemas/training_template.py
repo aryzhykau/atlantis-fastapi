@@ -14,6 +14,7 @@ class TrainingTemplateBase(BaseModel):
     start_time: time
     responsible_trainer: TrainerResponse
     training_type: TrainingTypeResponse
+    is_deleted: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
