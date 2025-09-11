@@ -13,7 +13,8 @@ from datetime import date
 
 # Получение списка всех тренировочных шаблонов с опциональной фильтрацией по дню
 def get_training_templates(db: Session, day_number: int = None):
-    query = db.query(TrainingTemplate)
+    # By default return only non-deleted templates
+    query = db.query(TrainingTemplate).filter(TrainingTemplate.is_deleted == False)
     
     if day_number is not None:
         query = query.filter(TrainingTemplate.day_number == day_number)
@@ -23,7 +24,8 @@ def get_training_templates(db: Session, day_number: int = None):
 
 # Получение тренировочного шаблона по ID
 def get_training_template_by_id(db: Session, template_id: int):
-    return db.query(TrainingTemplate).filter(TrainingTemplate.id == template_id).first()
+    # Exclude soft-deleted templates from normal lookup
+    return db.query(TrainingTemplate).filter(TrainingTemplate.id == template_id, TrainingTemplate.is_deleted == False).first()
 
 
 # Создание нового тренировочного шаблона
@@ -95,11 +97,10 @@ def delete_training_template(db: Session, template_id: int):
     db_template = get_training_template_by_id(db, template_id)
     if not db_template:
         return None
-    db.query(TrainingStudentTemplate).filter(
-        TrainingStudentTemplate.training_template_id == template_id
-    ).delete()
-    db.delete(db_template)
+    # Soft-delete: mark as deleted so dependent real trainings and students keep their references
+    db_template.is_deleted = True
     db.commit()
+    db.refresh(db_template)
     return db_template
 
 

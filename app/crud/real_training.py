@@ -302,9 +302,11 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
     ).filter(
         and_(
             User.is_active.is_(True),
-            TrainingType.is_active.is_(True)
+            TrainingType.is_active.is_(True),
+            TrainingTemplate.is_deleted.is_(False)
         )
     ).all()
+
     
     created_trainings_details = []
     created_count = 0

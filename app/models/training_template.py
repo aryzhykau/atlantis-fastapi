@@ -28,6 +28,8 @@ class TrainingTemplate(Base):
     start_time = Column(Time, nullable=False)
     responsible_trainer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     training_type_id = Column(Integer, ForeignKey("training_types.id"), nullable=False)
+    # Soft-delete flag: when True the template is considered deleted and should be excluded from default queries
+    is_deleted = Column(Boolean, default=False, nullable=False)
 
     assigned_students = relationship("TrainingStudentTemplate", back_populates="linked_training_template")
     training_type = relationship("TrainingType", backref="training_templates")

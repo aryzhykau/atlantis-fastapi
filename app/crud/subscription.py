@@ -413,23 +413,27 @@ def update_subscription_auto_renewal_invoice(
     return student_subscription
 
 
-def get_today_auto_renewal_subscriptions(
+def get_auto_renewal_subscriptions(
     db: Session,
+    days_back: int = 7
 ) -> List[StudentSubscription]:
     """
-    Получение всех абонементов с автопродлением, которые заканчиваются сегодня
+    Получение всех абонементов с автопродлением, которые заканчиваются сегодня или закончились в прошлые дни
+    
+    Args:
+        days_back: Количество дней назад для поиска просроченных подписок (по умолчанию 7)
     """
     from datetime import datetime, timezone, timedelta
     
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
     current_time = datetime.now(timezone.utc)
+    today_end = current_time.replace(hour=23, minute=59, second=59, microsecond=999999)
+    search_start = today_end - timedelta(days=days_back)
     
     return db.query(StudentSubscription).filter(
         and_(
             StudentSubscription.is_auto_renew == True,
-            StudentSubscription.end_date >= today_start,
-            StudentSubscription.end_date < today_end,
+            StudentSubscription.end_date >= search_start,
+            StudentSubscription.end_date <= today_end,
             StudentSubscription.auto_renewal_invoice_id.is_(None),  # Защита от дублей
             # Исключаем замороженные подписки - если есть даты заморозки, то подписка заморожена
             or_(
@@ -443,6 +447,15 @@ def get_today_auto_renewal_subscriptions(
             )
         )
     ).all()
+
+
+def get_today_auto_renewal_subscriptions(
+    db: Session,
+) -> List[StudentSubscription]:
+    """
+    Получение всех абонементов с автопродлением, которые заканчиваются сегодня (для обратной совместимости)
+    """
+    return get_auto_renewal_subscriptions(db, days_back=0)
 
 
 def transfer_sessions(

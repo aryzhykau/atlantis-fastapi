@@ -95,14 +95,17 @@ class SubscriptionService:
         with transactional(self.db) as session:
             return self._unfreeze_subscription_logic(session, student_subscription_id, updated_by_id)
 
-    def process_auto_renewals(self) -> List[StudentSubscription]:
+    def process_auto_renewals(self, days_back: int = 7) -> List[StudentSubscription]:
         """
-        Processes auto-renewals for subscriptions ending today.
+        Processes auto-renewals for subscriptions ending today or that ended in the past.
         This method is designed to be called by a scheduled task.
+        
+        Args:
+            days_back: How many days back to look for expired subscriptions (default: 7)
         """
         # This entire method will run in a single transaction
         with transactional(self.db) as session:
-            return self._process_auto_renewals_logic(session)
+            return self._process_auto_renewals_logic(session, days_back)
 
     def auto_unfreeze_expired_subscriptions(self) -> List[StudentSubscription]:
         """
@@ -277,11 +280,12 @@ class SubscriptionService:
 
         return unfrozen_subscription
 
-    def _process_auto_renewals_logic(self, session: Session) -> List[StudentSubscription]:
-        subscriptions_to_renew = crud.get_today_auto_renewal_subscriptions(session)
+    def _process_auto_renewals_logic(self, session: Session, days_back: int = 7) -> List[StudentSubscription]:
+        subscriptions_to_renew = crud.get_auto_renewal_subscriptions(session, days_back)
 
-        logger.info(f"Found {len(subscriptions_to_renew)} subscriptions for auto-renewal")
+        logger.info(f"Found {len(subscriptions_to_renew)} subscriptions for auto-renewal (looking back {days_back} days)")
         renewed_subscriptions = []
+        current_time = datetime.now(timezone.utc)
         
         for subscription in subscriptions_to_renew:
             try:
@@ -295,7 +299,17 @@ class SubscriptionService:
                     logger.warning(f"Subscription template {subscription.subscription_id} not found or inactive, skipping auto-renewal")
                     continue
                 
-                new_start_date = subscription.end_date + timedelta(days=1)
+                # Calculate if this is a delayed renewal
+                days_expired = (current_time.date() - subscription.end_date.date()).days
+                is_delayed_renewal = days_expired > 0
+                
+                # For delayed renewals, start from today; for current renewals, start from next day
+                if is_delayed_renewal:
+                    new_start_date = current_time
+                    logger.info(f"Processing delayed auto-renewal for subscription {subscription.id}, expired {days_expired} days ago")
+                else:
+                    new_start_date = subscription.end_date + timedelta(days=1)
+                
                 new_subscription_data = StudentSubscriptionCreate(
                     student_id=subscription.student_id,
                     subscription_id=subscription.subscription_id,
@@ -310,8 +324,16 @@ class SubscriptionService:
                 
                 new_subscription = crud.create_student_subscription(session, new_subscription_data)
 
-                crud.transfer_sessions(session, subscription, new_subscription, 3)
+                # For delayed renewals, transfer all unused sessions; for current renewals, limit to 3
+                max_sessions_to_transfer = subscription.sessions_left if is_delayed_renewal else min(3, subscription.sessions_left)
+                crud.transfer_sessions(session, subscription, new_subscription, max_sessions_to_transfer)
 
+                # Create appropriate invoice description
+                if is_delayed_renewal:
+                    description = f"Delayed Auto-renewal: {subscription_template.name} (expired {days_expired} days ago)"
+                else:
+                    description = f"Auto-renewal: {subscription_template.name}"
+                
                 invoice_data = InvoiceCreate(
                     client_id=student.client_id,
                     student_id=subscription.student_id,
@@ -319,7 +341,7 @@ class SubscriptionService:
                     student_subscription_id=new_subscription.id, 
                     type=InvoiceType.SUBSCRIPTION,
                     amount=subscription_template.price,
-                    description=f"Auto-renewal: {subscription_template.name}",
+                    description=description,
                     status=InvoiceStatus.UNPAID,
                     is_auto_renewal=True
                 )
@@ -336,7 +358,13 @@ class SubscriptionService:
                 )
                 
                 renewed_subscriptions.append(new_subscription)
-                logger.info(f"Successfully auto-renewed subscription {subscription.id} for student {subscription.student_id}")
+                
+                if is_delayed_renewal:
+                    logger.info(f"Successfully processed delayed auto-renewal for subscription {subscription.id} "
+                              f"(expired {days_expired} days ago) for student {subscription.student_id}, "
+                              f"transferred {max_sessions_to_transfer} sessions")
+                else:
+                    logger.info(f"Successfully auto-renewed subscription {subscription.id} for student {subscription.student_id}")
                 
             except Exception as e:
                 logger.error(f"Failed to auto-renew subscription {subscription.id} for student {subscription.student_id}: {str(e)}")
