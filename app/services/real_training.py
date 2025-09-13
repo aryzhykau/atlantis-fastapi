@@ -361,7 +361,11 @@ class RealTrainingService:
         
         if "status" in update_dict:
             status = update_dict["status"]
-            if status == AttendanceStatus.CANCELLED:
+            # status may come as a plain string from the API (e.g. "CANCELLED")
+            # or as a specific cancellation variant like "CANCELLED_SAFE" / "CANCELLED_PENALTY".
+            # AttendanceStatus enum doesn't have a generic CANCELLED member, so detect by value.
+            status_value = status.value if hasattr(status, "value") else status
+            if isinstance(status_value, str) and status_value in ("CANCELLED", AttendanceStatus.CANCELLED_SAFE.value, AttendanceStatus.CANCELLED_PENALTY.value):
                 reason = self._handle_cancellation(session, db_training, student_id, update_data)
                 update_dict["cancellation_reason"] = reason
 
