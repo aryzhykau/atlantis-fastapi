@@ -38,7 +38,7 @@ def create_student_endpoint(
 # Получение списка студентов
 @router.get("/", response_model=list[StudentResponse])
 def get_students_endpoint(
-        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER", "TRAINER"])),
         db: Session = Depends(get_db),
 ):
 
