@@ -34,7 +34,8 @@ def create_training_template(db: Session, training_template: TrainingTemplateCre
     existing_template = db.query(TrainingTemplate).filter(
         TrainingTemplate.day_number == training_template.day_number,
         TrainingTemplate.start_time == training_template.start_time,
-        TrainingTemplate.responsible_trainer_id == training_template.responsible_trainer_id
+        TrainingTemplate.responsible_trainer_id == training_template.responsible_trainer_id,
+        TrainingTemplate.is_deleted == False
     ).first()
     
     if existing_template:
@@ -75,7 +76,8 @@ def update_training_template(db: Session, template_id: int, update_data: Trainin
             TrainingTemplate.id != template_id,  # Исключаем текущий шаблон
             TrainingTemplate.day_number == final_day,
             TrainingTemplate.start_time == final_time,
-            TrainingTemplate.responsible_trainer_id == final_trainer_id
+            TrainingTemplate.responsible_trainer_id == final_trainer_id,
+            TrainingTemplate.is_deleted == False
         ).first()
         
         if existing_template:
