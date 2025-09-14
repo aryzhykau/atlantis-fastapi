@@ -361,4 +361,4 @@ async def cancel_training_endpoint(
     4. Закрытие тренировки
     """
     service = RealTrainingService(db)
-    return await service.cancel_training(training_id, cancellation_data) 
+    return service.cancel_training(training_id, cancellation_data)
