@@ -191,24 +191,103 @@ class FinancialService:
         return payment_crud.get_payments(self.db)
 
     def get_payment_history(self, user_id: int, filters: dict) -> dict:
-        # For now, we'll just return all history for the client_id if provided in filters
-        # A more robust implementation would apply all filters
-        client_id = filters.client_id
+        # Build a query for PaymentHistory and apply optional filters.
+        # `filters` may be a Pydantic model or a plain dict.
+        def _get(field):
+            if isinstance(filters, dict):
+                return filters.get(field)
+            return getattr(filters, field, None)
+
+        operation_type = _get('operation_type')
+        client_id = _get('client_id')
+        created_by_id = _get('created_by_id')
+        date_from = _get('date_from')
+        date_to = _get('date_to')
+        amount_min = _get('amount_min')
+        amount_max = _get('amount_max')
+        description_search = _get('description_search')
+        skip = _get('skip') or 0
+        limit = _get('limit') or 50
+
+        query = self.db.query(PaymentHistory)
+
+        if operation_type:
+            query = query.filter(PaymentHistory.operation_type == operation_type)
+
         if client_id:
-            items = payment_crud.get_payment_history(self.db, client_id=client_id)
-            return {
-                "items": items,
-                "total": len(items),
-                "skip": 0,
-                "limit": len(items),
-                "has_more": False
-            }
+            query = query.filter(PaymentHistory.client_id == client_id)
+
+        if created_by_id:
+            query = query.filter(PaymentHistory.created_by_id == created_by_id)
+
+        # Date filters (expecting YYYY-MM-DD)
+        if date_from:
+            try:
+                from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+                query = query.filter(PaymentHistory.created_at >= from_dt)
+            except Exception:
+                pass
+
+        if date_to:
+            try:
+                to_dt = datetime.strptime(date_to, "%Y-%m-%d")
+                # include the whole day
+                to_dt = to_dt + timedelta(days=1)
+                query = query.filter(PaymentHistory.created_at < to_dt)
+            except Exception:
+                pass
+
+        if amount_min is not None:
+            try:
+                query = query.filter(PaymentHistory.amount >= float(amount_min))
+            except Exception:
+                pass
+
+        if amount_max is not None:
+            try:
+                query = query.filter(PaymentHistory.amount <= float(amount_max))
+            except Exception:
+                pass
+
+        if description_search:
+            try:
+                query = query.filter(PaymentHistory.description.ilike(f"%{description_search}%"))
+            except Exception:
+                pass
+
+        total = query.count()
+
+        results = query.order_by(PaymentHistory.created_at.desc()).offset(skip).limit(limit).all()
+
+        items = []
+        for ph in results:
+            items.append({
+                'id': ph.id,
+                'client_id': ph.client_id,
+                'payment_id': ph.payment_id,
+                'invoice_id': ph.invoice_id,
+                'operation_type': ph.operation_type,
+                'amount': ph.amount,
+                'balance_before': ph.balance_before,
+                'balance_after': ph.balance_after,
+                'description': ph.description,
+                'created_at': ph.created_at,
+                'created_by_id': ph.created_by_id,
+                'client_first_name': ph.client.first_name if ph.client else None,
+                'client_last_name': ph.client.last_name if ph.client else None,
+                'created_by_first_name': ph.created_by.first_name if ph.created_by else None,
+                'created_by_last_name': ph.created_by.last_name if ph.created_by else None,
+                'payment_description': ph.payment.description if ph.payment else None,
+            })
+
+        has_more = (skip + len(items)) < total
+
         return {
-            "items": [],
-            "total": 0,
-            "skip": 0,
-            "limit": 0,
-            "has_more": False
+            'items': items,
+            'total': total,
+            'skip': skip,
+            'limit': limit,
+            'has_more': has_more,
         }
 
     def process_invoices(self, admin_id: int):
