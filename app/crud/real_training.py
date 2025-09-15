@@ -397,6 +397,19 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
                     )
                     db.add(student_training)
                     added_students_count += 1
+
+                    if not template.training_type.is_subscription_only:
+                        # Создаем счет для тренировки, не требующей абонемента
+                        invoice = Invoice(
+                            client_id=template_student.student.client_id,
+                            student_id=template_student.student_id,
+                            invoice_type=InvoiceType.TRAINING,
+                            status="PENDING",
+                            amount=template.training_type.price,
+                            due_date=template_date,
+                            description=f"Счет за тренировку {template.training_type.name} {template_date.strftime('%d.%m.%Y')}"
+                        )
+                        db.add(invoice)
             
             created_trainings_details.append(new_training)
             created_count += 1

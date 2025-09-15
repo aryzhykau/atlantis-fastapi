@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.auth.permissions import get_current_user
+from app.auth.permissions_new import get_current_user
 from app.dependencies import get_db
 from app.schemas.training_type import (
     TrainingTypeCreate,
@@ -33,6 +33,9 @@ def create_training_type_endpoint(
 ):
     logger.debug(training_type_data)
     print(training_type_data)
+    print("adding")
+    new_training_type = create_training_type(db, training_type_data)
+    return new_training_type
 
 
 # Получение списка типов тренировок
@@ -40,7 +43,7 @@ def create_training_type_endpoint(
 def get_training_types_endpoint(
         skip: int = 0,
         limit: int = 10,
-        current_user=Depends(get_current_user()),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
     # Здесь доступ разрешен всем авторизованным пользователям
@@ -52,7 +55,7 @@ def get_training_types_endpoint(
 @router.get("/{training_type_id}", response_model=TrainingTypeResponse)
 def get_training_type_endpoint(
         training_type_id: int,
-        current_user=Depends(get_current_user()),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
     # Доступ разрешен всем авторизованным пользователям

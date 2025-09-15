@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
+from datetime import time
+from enum import Enum
 
 
 # Обобщенная схема для TrainingType
@@ -11,6 +13,15 @@ class TrainingTypeBase(BaseModel):
     color: str
     is_active: bool
     max_participants: int
+    # Cancellation policy
+    cancellation_mode: Optional[str] = Field(default="FLEXIBLE", description="Cancellation mode: FIXED or FLEXIBLE")
+    # Fixed mode
+    safe_cancel_time_morning: Optional[time] = None
+    safe_cancel_time_evening: Optional[time] = None
+    safe_cancel_time_morning_prev_day: Optional[bool] = False
+    safe_cancel_time_evening_prev_day: Optional[bool] = False
+    # Flexible mode
+    safe_cancel_hours: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +103,30 @@ class TrainingTypeCreate(BaseModel):
             ]
         }
     )
+
+    # New cancellation fields
+    cancellation_mode: str = Field(default="FLEXIBLE", description="FIXED or FLEXIBLE")
+    safe_cancel_time_morning: Optional[time] = None
+    safe_cancel_time_evening: Optional[time] = None
+    safe_cancel_time_morning_prev_day: Optional[bool] = False
+    safe_cancel_time_evening_prev_day: Optional[bool] = False
+    safe_cancel_hours: Optional[int] = None
+
+    @field_validator("cancellation_mode")
+    def validate_cancellation_mode(cls, v: str) -> str:
+        if v not in ("FIXED", "FLEXIBLE"):
+            raise ValueError("cancellation_mode must be either 'FIXED' or 'FLEXIBLE'")
+        return v
+
+    @field_validator("safe_cancel_hours")
+    def validate_safe_hours(cls, v, info):
+        mode = info.data.get("cancellation_mode", "FLEXIBLE")
+        if mode == "FLEXIBLE":
+            if v is None:
+                raise ValueError("safe_cancel_hours is required for FLEXIBLE cancellation_mode")
+            if v < 0:
+                raise ValueError("safe_cancel_hours must be non-negative")
+        return v
 
     @field_validator("price", mode="before")
     def validate_price(cls, value, info):
@@ -195,6 +230,30 @@ class TrainingTypeUpdate(BaseModel):
             ]
         }
     )
+
+    # Cancellation fields for update
+    cancellation_mode: Optional[str] = None
+    safe_cancel_time_morning: Optional[time] = None
+    safe_cancel_time_evening: Optional[time] = None
+    safe_cancel_time_morning_prev_day: Optional[bool] = None
+    safe_cancel_time_evening_prev_day: Optional[bool] = None
+    safe_cancel_hours: Optional[int] = None
+
+    @field_validator("cancellation_mode")
+    def validate_cancellation_mode_optional(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in ("FIXED", "FLEXIBLE"):
+            raise ValueError("cancellation_mode must be either 'FIXED' or 'FLEXIBLE'")
+        return v
+
+    @field_validator("safe_cancel_hours")
+    def validate_safe_hours_optional(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("safe_cancel_hours must be non-negative")
+        return v
 
     @field_validator("name")
     def validate_name(cls, v: Optional[str]) -> Optional[str]:

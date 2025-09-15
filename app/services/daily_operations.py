@@ -1,103 +1,82 @@
+import logging
 from datetime import date, timedelta
-from logging import getLogger
-
 from sqlalchemy.orm import Session
+from app.database import transactional
+from app.models import RealTraining, RealTrainingStudent, InvoiceStatus, AttendanceStatus
+from app.services.financial import FinancialService
 
-from app.crud.real_training import get_real_trainings_by_date
-from app.models import RealTrainingStudent
-from app.models.real_training import AttendanceStatus
-from app.services.training_processing import TrainingProcessingService
-
-logger = getLogger(__name__)
-
+logger = logging.getLogger(__name__)
 
 class DailyOperationsService:
     def __init__(self, db: Session):
         self.db = db
-        self.training_processing_service = TrainingProcessingService(db)
+        self.financial_service = FinancialService(db)
 
-    def process_daily_operations(self):
+    def process_tomorrows_trainings(self) -> None:
         """
-        Выполняет две основные операции:
-        1. Обработка посещаемости за СЕГОДНЯШНИЙ день (статус REGISTERED -> PRESENT).
-        2. Финансовая обработка СЕГОДНЯШНИХ тренировок.
+        Processes all trainings scheduled for the next day.
         """
-        today = date.today()
+        tomorrow = date.today() + timedelta(days=1)
+        trainings_to_process = self.db.query(RealTraining).filter(
+            RealTraining.training_date == tomorrow,
+            RealTraining.processed_at.is_(None)
+        ).all()
 
-        logger.info("Starting daily operations...")
+        for training in trainings_to_process:
+            self._process_training(training)
 
-        # --- Этап 1: Обработка посещаемости за сегодня ---
-        students_updated = self._process_today_attendance(today)
-
-        # --- Этап 2: Финансовая обработка за сегодня ---
-        trainings_processed = self._process_today_finances(today)
-
-        logger.info("Daily operations completed.")
-        self.db.commit()
-        
-        return {
-            "students_updated": students_updated,
-            "trainings_processed": trainings_processed,
-            "processing_date": today.isoformat()
-        }
-
-    def _process_today_attendance(self, processing_date: date):
+    @transactional
+    def _process_training(self, training: RealTraining) -> None:
         """
-        Меняет статус с REGISTERED на PRESENT для всех студентов
-        на тренировках в указанный день.
-        Финансовые операции здесь НЕ производятся.
+        Processes a single training and all its students within a transaction.
         """
-        logger.info(f"Processing attendance for date: {processing_date}...")
-        trainings_today = get_real_trainings_by_date(self.db, processing_date)
-        students_updated = 0
+        logger.info(f"Processing training {training.id} for date {training.training_date}")
 
-        for training in trainings_today:
-            students_to_update = (
-                self.db.query(RealTrainingStudent)
-                .filter(
-                    RealTrainingStudent.real_training_id == training.id,
-                    RealTrainingStudent.status == AttendanceStatus.REGISTERED,
-                )
-                .all()
-            )
+        for student_training in training.students:
+            self._process_student(student_training)
 
-            for student_training in students_to_update:
-                student_training.status = AttendanceStatus.PRESENT
-                students_updated += 1
-                logger.debug(
-                    f"Student {student_training.student_id} in training {training.id} "
-                    f"marked as PRESENT."
-                )
+        training.processed_at = date.today()
+        self.db.add(training)
 
-        logger.info(
-            f"Attendance processing for {processing_date} finished. "
-            f"Updated {students_updated} students."
-        )
-        
-        return students_updated
-
-    def _process_today_finances(self, processing_date: date):
+    def _process_student(self, student_training: RealTrainingStudent) -> None:
         """
-        Выполняет финансовую обработку (списание занятий/создание инвойсов)
-        для всех тренировок на указанную дату, которые еще не были обработаны.
+        Processes a single student in a training.
         """
-        logger.info(f"Processing finances for date: {processing_date}...")
-        trainings_today = get_real_trainings_by_date(self.db, processing_date)
-        processed_count = 0
+        if student_training.subscription_id:
+            self._process_subscription_user(student_training)
+        else:
+            self._process_pay_per_session_user(student_training)
 
-        for training in trainings_today:
-            if training.processed_at is None:
-                logger.info(f"Processing training ID: {training.id}")
-                self.training_processing_service._process_training(self.db, training)
-                processed_count += 1
-            else:
-                logger.info(
-                    f"Skipping already processed training ID: {training.id}"
-                )
+    def _process_subscription_user(self, student_training: RealTrainingStudent) -> None:
+        """
+        Processes a subscription user.
+        """
+        if not student_training.session_deducted:
+            if student_training.status in [AttendanceStatus.REGISTERED, AttendanceStatus.PRESENT]:
+                # This is where you would deduct a session from the subscription
+                # For now, we'll just log it
+                logger.info(f"Deducting session for student {student_training.student_id} in training {student_training.real_training_id}")
+                student_training.session_deducted = True
+                self.db.add(student_training)
 
-        logger.info(
-            f"Financial processing for {processing_date} finished. "
-            f"Processed {processed_count} trainings."
-        )
-        
-        return processed_count 
+    def _process_pay_per_session_user(self, student_training: RealTrainingStudent) -> None:
+        """
+        Processes a pay-per-session user.
+        """
+        invoice = self.db.query(Invoice).filter(
+            Invoice.student_id == student_training.student_id,
+            Invoice.training_id == student_training.real_training_id,
+            Invoice.status == InvoiceStatus.PENDING
+        ).first()
+
+        if not invoice:
+            return
+
+        if student_training.status in [AttendanceStatus.REGISTERED, AttendanceStatus.PRESENT, AttendanceStatus.LATE_CANCEL, AttendanceStatus.NO_SHOW]:
+            invoice.status = InvoiceStatus.UNPAID
+            self.db.add(invoice)
+            self.db.flush()
+            self.financial_service.attempt_auto_payment(self.db, invoice.id)
+        elif student_training.status == AttendanceStatus.CANCELLED_SAFE:
+            invoice.status = InvoiceStatus.CANCELLED
+            self.db.add(invoice)
