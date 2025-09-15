@@ -1,8 +1,7 @@
-from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, Payment, InvoiceStatus, PaymentHistory
+from app.models import Invoice, Payment, InvoiceStatus
 from app.crud import invoice as invoice_crud
 from app.crud import payment as payment_crud
 

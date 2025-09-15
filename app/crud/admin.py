@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from app.models import User, UserRole
-from app.schemas.user import AdminCreate, AdminUpdate, AdminStatusUpdate
+from app.schemas.user import AdminCreate, AdminUpdate
 
 
 def get_admin_by_id(db: Session, admin_id: int) -> Optional[User]:

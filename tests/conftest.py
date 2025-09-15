@@ -1,10 +1,10 @@
-from datetime import date, datetime, timedelta, time, timezone
+from datetime import date, datetime, timedelta, time
 import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from app.main import app
 from app.database import Base
@@ -13,7 +13,7 @@ from app.models.user import UserRole
 from app.models.user import User, UserRole
 from app.models.student import Student
 from app.models.training_type import TrainingType
-from app.models.subscription import Subscription, StudentSubscription
+from app.models.subscription import Subscription
 from app.models.payment import Payment
 from app.models.invoice import Invoice, InvoiceStatus, InvoiceType
 from app.models.payment_history import PaymentHistory
@@ -49,7 +49,8 @@ def db_session(engine):
         last_name="Ryzhykau",
         date_of_birth=date(1997, 6, 14),
         email="rorychan0697@gmail.com",
-        phone="0940597865",
+        phone_country_code="1",
+        phone_number="0940597865",
         role=UserRole.ADMIN,
         is_authenticated_with_google=True,
     )
@@ -105,7 +106,8 @@ def test_trainer(db_session: Session) -> User:
         first_name="Тестовый",
         last_name="Тренер",
         email="fittesttrainer@example.com",
-        phone="1234567891",
+        phone_country_code="1",
+        phone_number="1234567891",
         date_of_birth=date(1990, 5, 15),
         role=UserRole.TRAINER,
         is_active=True,
@@ -126,7 +128,8 @@ def test_client(db_session):
         last_name="Example",
         date_of_birth=date(1998, 11, 23),
         email="testclient@example.com",
-        phone="9876543210",
+        phone_country_code="1",
+        phone_number="9876543210",
         role=UserRole.CLIENT,
         balance=0,
         whatsapp_number="1234567890",
@@ -257,7 +260,8 @@ def create_test_client(db_session):
         last_name="Client",
         date_of_birth=date(1990, 1, 1),
         email="test.client@example.com",
-        phone="1234567891",
+        phone_country_code="1",
+        phone_number="1234567891",
         whatsapp_number="1234567891",
         role=UserRole.CLIENT,
         balance=0,
@@ -330,7 +334,8 @@ def test_second_trainer(db_session: Session) -> User:
         first_name="Второй",
         last_name="Тренер",
         email="secondtrainer@example.com",
-        phone="1234567892",
+        phone_country_code="1",
+        phone_number="1234567892",
         date_of_birth=date(1985, 8, 20),
         role=UserRole.TRAINER,
         is_active=True,
@@ -351,7 +356,8 @@ def test_second_client(db_session):
         last_name="Doe",
         date_of_birth=date(1995, 5, 15),
         email="janedoe@example.com",
-        phone="9876543211",
+        phone_country_code="1",
+        phone_number="9876543211",
         role=UserRole.CLIENT,
         balance=5000.0,
         whatsapp_number="1234567891",
@@ -772,16 +778,6 @@ def test_student_training_penalty_cancellation_with_subscription(db_session, tes
 
 
 # Импортируем фикстуры для подписок
-from .fixtures.subscription_fixtures import (
-    test_subscription,
-    test_student_subscription,
-    test_auto_renewal_subscription,
-    test_student_subscription_expired,
-    test_frozen_subscription,
-    test_expired_frozen_subscription,
-    test_subscription_with_transferred_sessions,
-    test_inactive_subscription
-)
 
 
 

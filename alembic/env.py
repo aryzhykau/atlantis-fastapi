@@ -19,12 +19,6 @@ from app.database import Base
 
 target_metadata = Base.metadata
 from app.config import Config
-from app.models import User
-from app.models import Student
-from app.models import TrainingType
-from app.models import Subscription, StudentSubscription
-from app.models import TrainingStudentTemplate, TrainingTemplate
-from app.models import RealTraining, RealTrainingStudent
 
 
 # other values from the config, defined by the needs of env.py,

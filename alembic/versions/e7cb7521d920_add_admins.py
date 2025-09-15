@@ -7,9 +7,8 @@ Create Date: 2025-05-13 15:35:02.100539
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 from sqlalchemy.sql import table, column
-from sqlalchemy import String, Integer, Boolean, Date, Enum, Float
+from sqlalchemy import String, Integer, Boolean, Date, Enum
 from app.models.user import UserRole  # Используем Enum UserRole из существующей модели
 
 # revision identifiers, used by Alembic.

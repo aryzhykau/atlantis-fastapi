@@ -3,7 +3,6 @@ import logging
 from typing import List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, or_
 
 from app.crud import invoice as invoice_crud
 from app.crud import payment as payment_crud
@@ -24,6 +23,72 @@ logger = logging.getLogger(__name__)
 class FinancialService:
     def __init__(self, db: Session):
         self.db = db
+
+    def _refund_paid_invoice(self, session: Session, invoice: Invoice, cancelled_by_id: int) -> None:
+        """
+        Refunds a paid invoice by creating a refund payment, updating the client's balance,
+        and creating a payment history record.
+        """
+        # 1. Get the client
+        user = user_crud.get_user_by_id(session, invoice.client_id)
+        if not user:
+            raise ValueError("Client not found for refund")
+
+        user_initial_balance = user.balance if user.balance is not None else 0.0
+
+        # 2. Create a refund payment
+        refund_payment = payment_crud.create_payment(
+            session,
+            client_id=invoice.client_id,
+            amount=-invoice.amount,
+            registered_by_id=cancelled_by_id,
+            description=f"Refund for cancelled invoice {invoice.id}",
+        )
+
+        # 3. Update client balance
+        user.balance += invoice.amount
+        session.add(user)
+        session.flush()
+
+        # 4. Create payment history record
+        payment_history = PaymentHistory(
+            client_id=invoice.client_id,
+            payment_id=refund_payment.id,
+            invoice_id=invoice.id,
+            operation_type=OperationType.REFUND,
+            amount=-invoice.amount,
+            balance_before=user_initial_balance,
+            balance_after=user.balance,
+            description=f"Refund for cancelled invoice {invoice.id}",
+            created_by_id=cancelled_by_id,
+        )
+        session.add(payment_history)
+        session.flush()
+
+        # 5. Mark invoice as cancelled
+        invoice_crud.cancel_invoice(session, invoice.id, cancelled_by_id=cancelled_by_id)
+
+    def attempt_auto_payment(self, session: Session, invoice_id: int) -> bool:
+        """Attempts to pay a single invoice using the client's balance."""
+        invoice = invoice_crud.get_invoice(session, invoice_id)
+        if not invoice:
+            raise ValueError("Invoice not found")
+
+        if invoice.status != InvoiceStatus.UNPAID:
+            raise ValueError("Invoice is not in UNPAID status")
+
+        user = user_crud.get_user_by_id(session, invoice.client_id)
+        if not user:
+            raise ValueError("Client not found")
+
+        client_balance = user.balance if user.balance is not None else 0.0
+
+        if client_balance >= invoice.amount:
+            invoice_crud.mark_invoice_as_paid(session, invoice.id)
+            user_crud.update_user(session, user.id, UserUpdate(balance=client_balance - invoice.amount))
+            return True
+
+        return False
 
     def create_standalone_invoice(
         self, invoice_data: InvoiceCreate, auto_pay: bool = True
@@ -557,7 +622,6 @@ class FinancialService:
         - reason: str (explanation)
         - remaining_students_count: int
         """
-        from datetime import timedelta
         
         training = real_training_crud.get_real_training(self.db, training_id)
         if not training:

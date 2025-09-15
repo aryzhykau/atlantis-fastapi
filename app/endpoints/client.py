@@ -5,7 +5,7 @@ from typing import List
 
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
-from app.schemas.user import ClientCreate, ClientResponse, ClientUpdate, UserRole, StatusUpdate, ClientStatusResponse
+from app.schemas.user import ClientCreate, ClientResponse, ClientUpdate, StatusUpdate, ClientStatusResponse
 from app.schemas.student import StudentResponse
 from app.crud import client as crud_client
 from app.crud import student as crud_student

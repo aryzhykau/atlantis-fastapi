@@ -1,13 +1,12 @@
 from sqlalchemy.orm import Session, joinedload, selectinload
 from fastapi import HTTPException
-from app.models import TrainingTemplate, TrainingStudentTemplate, TrainingType
+from app.models import TrainingTemplate, TrainingStudentTemplate
 from app.schemas.training_template import (
     TrainingTemplateCreate,
     TrainingTemplateUpdate,
     TrainingStudentTemplateCreate,
     TrainingStudentTemplateUpdate,
 )
-from datetime import date
 
 
 

@@ -145,7 +145,7 @@ def process_daily_operations_endpoint(db: Session = Depends(get_db)):
     """
     try:
         service = DailyOperationsService(db)
-        result = service.process_daily_operations()
+        result = service.process_tomorrows_trainings()
         
         return {
             "status": "success", 

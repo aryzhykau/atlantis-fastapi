@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
-from app.models import User, UserRole
+from app.models import User
 from app.schemas.training_template import (
     TrainingStudentTemplateCreate,
     TrainingStudentTemplateUpdate,

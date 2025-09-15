@@ -2,12 +2,8 @@ from datetime import time, date, datetime
 from typing import Optional, List
 from app.schemas.user import TrainerResponse
 from app.schemas.training_type import TrainingTypeResponse
-from app.schemas.training_template import TrainingTemplateResponse
-from app.schemas.student import StudentResponse
-from enum import Enum
 from pydantic import BaseModel, ConfigDict
 from app.schemas.real_training_student import RealTrainingStudentResponse
-from app.schemas.attendance import AttendanceStatus
 
 
 class StudentCancellationRequest(BaseModel):

@@ -5,8 +5,7 @@ from sqlalchemy import desc
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import UserRole, StatusUpdate, StudentStatusResponse
-from app.schemas.student import (StudentCreate, StudentResponse, StudentUpdate,
-                              StudentCreateWithoutClient)
+from app.schemas.student import (StudentCreate, StudentResponse, StudentUpdate)
 from app.schemas.payment import PaymentHistoryResponse
 from app.crud.student import (create_student, get_all_students, get_student_by_id,
                               update_student, get_students_by_client_id)
@@ -14,7 +13,6 @@ from app.services.student_service import student_service
 from app.models.user import User
 from app.models.payment_history import PaymentHistory
 from app.models.student import Student
-from app.models.real_training import RealTraining, RealTrainingStudent
 
 router = APIRouter(prefix="/students", tags=["Students"])
 

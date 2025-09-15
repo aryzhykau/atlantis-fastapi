@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import date
-from typing import List, Optional
+from typing import Optional
 
 from app.auth.permissions import get_current_user
 from app.core.security import verify_api_key
@@ -362,3 +362,4 @@ async def cancel_training_endpoint(
     """
     service = RealTrainingService(db)
     return service.cancel_training(training_id, cancellation_data)
+

@@ -5,12 +5,11 @@ This demonstrates how to use the new role dependencies.
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.dependencies import get_db, RequireOwner
 from app.schemas.user import (
     AdminCreate, AdminUpdate, AdminResponse, AdminStatusUpdate, 
-    AdminsList, UserRole
+    AdminsList
 )
 from app.crud.admin import (
     get_admin_by_id, get_all_admins, create_admin, update_admin,

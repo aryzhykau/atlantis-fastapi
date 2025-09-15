@@ -51,7 +51,6 @@ class ClientService:
         # 5. Создаём задачу контакта для нового клиента
         try:
             from app.services.client_contact import ClientContactService
-            from app.models.client_contact_task import ClientContactReason
             contact_service = ClientContactService(db)
             contact_service.create_task_on_new_client(client.id)
         except Exception:

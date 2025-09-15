@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone, date
 from typing import Dict, Any, List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session
 

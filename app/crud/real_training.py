@@ -1,6 +1,6 @@
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Tuple
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from sqlalchemy.orm import Session, joinedload, selectinload
 import logging
 from datetime import timezone
@@ -17,14 +17,13 @@ from app.models import (
     Invoice,
     InvoiceType,
 )
-from app.models.real_training import SAFE_CANCELLATION_HOURS, AttendanceStatus
+from app.models.real_training import AttendanceStatus
 from app.schemas.real_training import (
     RealTrainingCreate,
     RealTrainingUpdate,
 )
 from app.schemas.real_training_student import (
     RealTrainingStudentCreate,
-    RealTrainingStudentUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -397,6 +396,18 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
                     )
                     db.add(student_training)
                     added_students_count += 1
+
+                    if not template.training_type.is_subscription_only:
+                        # Создаем счет для тренировки, не требующей абонемента
+                        invoice = Invoice(
+                            client_id=template_student.student.client_id,
+                            student_id=template_student.student_id,
+                            type=InvoiceType.TRAINING,
+                            status="PENDING",
+                            amount=template.training_type.price,
+                            description=f"Счет за тренировку {template.training_type.name} {template_date.strftime('%d.%m.%Y')}"
+                        )
+                        db.add(invoice)
             
             created_trainings_details.append(new_training)
             created_count += 1

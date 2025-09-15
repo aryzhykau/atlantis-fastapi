@@ -1,7 +1,7 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, case, func
-from sqlalchemy.orm import relationship, column_property
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 
 from app.database import Base  # Убедитесь, что Base импортируется из вашего настроенного проекта
@@ -34,7 +34,9 @@ class StudentSubscription(Base):
     
     # Учет тренировок
     sessions_left = Column(Integer, nullable=False)  # Оставшиеся тренировки
-    transferred_sessions = Column(Integer, default=0)  # Перенесенные тренировки (максимум 3)
+    skipped_sessions = Column(Integer, default=0)  # Пропущенные тренировки (максимум 3)
+    transferred_sessions = Column(Integer, default=0)  # Перенесенные тренировки
+    borrowed_sessions_count = Column(Integer, default=0) # Количество занятий, взятых в долг до автопродления
     
     # Автопродление
     auto_renewal_invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)  # Инвойс на автопродление

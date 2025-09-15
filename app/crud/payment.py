@@ -4,7 +4,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models import Payment, PaymentHistory
-from app.schemas.payment import PaymentCreate, PaymentUpdate
+from app.schemas.payment import PaymentUpdate
 
 
 # =============================================================================

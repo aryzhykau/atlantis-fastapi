@@ -1,12 +1,12 @@
-from .user import User, UserRole
-from .student import Student
-from .subscription import Subscription, StudentSubscription
-from .training_type import TrainingType
-from .training_template import TrainingTemplate, TrainingStudentTemplate
-from .real_training import RealTraining, RealTrainingStudent, AttendanceStatus
-from .payment import Payment
-from .invoice import Invoice, InvoiceStatus, InvoiceType
-from .payment_history import PaymentHistory
+from .user import UserRole, User
 from .expense import Expense, ExpenseType
+from .real_training import AttendanceStatus, RealTraining, RealTrainingStudent
+from .subscription import Subscription, StudentSubscription
+from .training_template import TrainingStudentTemplate, TrainingTemplate
+from .client_contact_task import ClientContactReason, ClientContactStatus, ClientContactTask
 from .trainer_training_type_salary import TrainerTrainingTypeSalary
-from .client_contact_task import ClientContactTask, ClientContactReason, ClientContactStatus
+from .payment_history import OperationType, PaymentHistory
+from .training_type import TrainingType
+from .student import Student
+from .payment import Payment
+from .invoice import InvoiceStatus, InvoiceType, Invoice

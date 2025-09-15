@@ -1,5 +1,4 @@
-from datetime import date, time, datetime
-from typing import Optional
+from datetime import datetime
 from sqlalchemy import Column, Integer, Date, Time, ForeignKey, Boolean, String, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 
@@ -60,6 +59,7 @@ class RealTrainingStudent(Base):
     attendance_marked_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     notification_time = Column(DateTime, nullable=True)
     requires_payment = Column(Boolean, nullable=True, default=True)
+    session_deducted = Column(Boolean, default=False)
 
     # Relationships
     real_training = relationship("RealTraining", back_populates="students")

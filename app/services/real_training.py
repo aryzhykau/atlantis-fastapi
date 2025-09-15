@@ -1,22 +1,20 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import Optional
 
-from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
 
 from app.crud import real_training as crud
 from app.crud import student as student_crud
+from app.crud import invoice as invoice_crud
 from app.models import (
     RealTraining,
     RealTrainingStudent,
-    Student,
     StudentSubscription,
     Invoice,
     InvoiceStatus,
-    InvoiceType,
-    User,
-    UserRole
+    InvoiceType
 )
 from app.models.real_training import AttendanceStatus
 from app.schemas.real_training import (
@@ -31,7 +29,6 @@ from app.services.financial import FinancialService
 from app.services.subscription import SubscriptionService
 from app.services.trainer_salary import TrainerSalaryService
 from app.errors.real_training_errors import (
-    RealTrainingError,
     TrainingNotFound,
     StudentNotOnTraining,
     StudentAlreadyRegistered,
@@ -40,11 +37,12 @@ from app.errors.real_training_errors import (
     InsufficientSessions
 )
 from app.schemas.invoice import InvoiceCreate
+import enum as _enum
 
 logger = logging.getLogger(__name__)
 
 # Константы для логики отмен
-SAFE_CANCELLATION_HOURS = 12  # Часов до тренировки для безопасной отмены
+SAFE_CANCELLATION_HOURS = 12  # Фолбэк: часов до тренировки для безопасной отмены
 
 class RealTrainingService:
     def __init__(self, db: Session):
@@ -140,16 +138,59 @@ class RealTrainingService:
         """
         Проверяет, можно ли отменить тренировку в указанное время
         """
+        # Normalize datetimes
         training_datetime = datetime.combine(training.training_date, training.start_time)
         if training_datetime.tzinfo is None:
             training_datetime = training_datetime.replace(tzinfo=timezone.utc)
-        
+
         if notification_time.tzinfo is None:
             notification_time = notification_time.replace(tzinfo=timezone.utc)
-        
-        time_diff = (training_datetime - notification_time).total_seconds() / 3600
-        
-        return time_diff >= SAFE_CANCELLATION_HOURS
+
+        # If training type defines cancellation policy - use it
+        tt = getattr(training, 'training_type', None)
+        # Fallback: compute hours difference
+        time_diff_hours = (training_datetime - notification_time).total_seconds() / 3600
+
+        if not tt:
+            return time_diff_hours >= SAFE_CANCELLATION_HOURS
+
+        mode = getattr(tt, 'cancellation_mode', None) or 'FLEXIBLE'
+        # Normalize SQLA Enum to raw value if needed
+        if isinstance(mode, _enum.Enum):
+            mode = mode.value
+        if mode == 'FLEXIBLE':
+            safe_hours = getattr(tt, 'safe_cancel_hours', None)
+            if safe_hours is None:
+                safe_hours = SAFE_CANCELLATION_HOURS
+            return time_diff_hours >= safe_hours
+
+        # FIXED mode: evaluate by comparing notification_time to configured safe time (morning/evening)
+        # Determine whether the training is considered morning or evening (12:00 threshold)
+        start_hour = training.start_time.hour
+        is_morning = start_hour < 12
+
+        if is_morning:
+            safe_time = getattr(tt, 'safe_cancel_time_morning', None)
+            prev_day = getattr(tt, 'safe_cancel_time_morning_prev_day', False)
+        else:
+            safe_time = getattr(tt, 'safe_cancel_time_evening', None)
+            prev_day = getattr(tt, 'safe_cancel_time_evening_prev_day', False)
+
+        if safe_time is None:
+            # If not configured, fall back to flexible hours
+            safe_hours = getattr(tt, 'safe_cancel_hours', None) or SAFE_CANCELLATION_HOURS
+            return time_diff_hours >= safe_hours
+
+        # Build the safe cancellation datetime
+        safe_date = training.training_date
+        if prev_day:
+            safe_date = safe_date - timedelta(days=1)
+
+        safe_datetime = datetime.combine(safe_date, safe_time)
+        if safe_datetime.tzinfo is None:
+            safe_datetime = safe_datetime.replace(tzinfo=timezone.utc)
+
+        return notification_time <= safe_datetime
 
     def _cancel_student_logic(
         self,
@@ -174,15 +215,26 @@ class RealTrainingService:
         if can_cancel_safely:
             student_training.status = AttendanceStatus.CANCELLED_SAFE
             student_training.cancellation_reason = cancellation_data.reason
+            student_training.cancelled_at = datetime.now(timezone.utc)
             session.add(student_training)
             
-            self._process_safe_cancellation_refunds(session, training, student_training)
+            # Process refunds/returns atomically per student
+            try:
+                self._process_safe_cancellation_refunds(session, training, student_training)
+            except Exception as e:
+                logger.exception(f"Error while processing safe cancellation refunds for student {student_id}: {e}")
+                raise
         else:
             student_training.status = AttendanceStatus.CANCELLED_PENALTY
             student_training.cancellation_reason = cancellation_data.reason
+            student_training.cancelled_at = datetime.now(timezone.utc)
             session.add(student_training)
             
-            self._apply_cancellation_penalty(session, training, student_id)
+            try:
+                self._apply_cancellation_penalty(session, training, student_id)
+            except Exception as e:
+                logger.exception(f"Error while applying cancellation penalty for student {student_id}: {e}")
+                raise
 
     def _cancel_training_logic(
         self,
@@ -228,13 +280,16 @@ class RealTrainingService:
             )
         ).first()
 
-        if active_subscription and was_processed:
-            active_subscription.sessions_left += 1
-            logger.info(f"Training cancellation: Session returned to subscription for student {student_id}. "
-                       f"Sessions left: {active_subscription.sessions_left} (was processed)")
-        elif active_subscription and not was_processed:
-            logger.info(f"Training cancellation: Session not returned for student {student_id} "
-                       f"(not yet processed, sessions left: {active_subscription.sessions_left})")
+        # If training was already processed (sessions were deducted), return session if it was deducted
+        if active_subscription:
+            # If session_deducted is True - that means session was already taken and should be returned
+            if getattr(student_training, 'session_deducted', False):
+                active_subscription.sessions_left += 1
+                student_training.session_deducted = False
+                logger.info(f"Training cancellation: Session returned to subscription for student {student_id}. "
+                           f"Sessions left: {active_subscription.sessions_left} (returned)")
+            else:
+                logger.info(f"Training cancellation: Session was not deducted for student {student_id} - nothing to return.")
         
         invoice = session.query(Invoice).filter(
             and_(
@@ -246,11 +301,14 @@ class RealTrainingService:
 
         if invoice:
             try:
-                # Delegate to InvoiceService for cancellation
-                self.financial_service.cancel_invoice(session, invoice.id, training.cancelled_by_id or 1)
-                logger.info(f"Training cancellation: Invoice {invoice.id} cancelled.")
+                # SAFE training cancellation: if invoice was PAID -> refund, else just cancel
+                if invoice.status == InvoiceStatus.PAID:
+                    self.financial_service._refund_paid_invoice(session, invoice, cancelled_by_id=getattr(training, 'cancelled_by_id', 1))
+                else:
+                    invoice_crud.cancel_invoice(session, invoice.id, cancelled_by_id=getattr(training, 'cancelled_by_id', 1))
+                logger.info(f"Training cancellation: Invoice {invoice.id} handled (status: {invoice.status}).")
             except Exception as e:
-                logger.error(f"Error cancelling invoice {invoice.id}: {e}")
+                logger.exception(f"Error cancelling/refunding invoice {invoice.id}: {e}")
         else:
             logger.info(f"Training cancellation: No invoice found for student {student_id} on training {training.id}")
 
@@ -263,42 +321,49 @@ class RealTrainingService:
         student_id = student_training.student_id
         training_id = student_training.real_training_id
 
-        was_processed = training.processed_at is not None
-        
-        active_subscription = session.query(StudentSubscription).filter(
-            and_(
-                StudentSubscription.student_id == student_id,
-                StudentSubscription.status == "active",
-                StudentSubscription.start_date <= training.training_date,
-                StudentSubscription.end_date >= training.training_date,
-            )
-        ).first()
+        # Subscription user
+        if student_training.subscription_id:
+            active_subscription = session.query(StudentSubscription).filter(
+                StudentSubscription.id == student_training.subscription_id
+            ).first()
 
-        if active_subscription and was_processed:
-            active_subscription.sessions_left += 1
-            logger.info(f"Safe cancellation: Session returned to subscription for student {student_id} on training {training_id}. "
-                       f"Sessions left: {active_subscription.sessions_left} (was processed)")
-        elif active_subscription and not was_processed:
-            logger.info(f"Safe cancellation: Session not returned for student {student_id} on training {training_id} "
-                       f"(not yet processed, sessions left: {active_subscription.sessions_left})")
+            if active_subscription:
+                if student_training.session_deducted:
+                    # If a session was deducted, it means it was counted against the subscription.
+                    # Now, instead of returning it to sessions_left, add to skipped_sessions (max 3).
+                    if active_subscription.skipped_sessions < 3:
+                        active_subscription.skipped_sessions += 1
+                        logger.info(f"Safe cancellation: Session added to skipped_sessions for student {student_id} on training {training_id}. "
+                                   f"Skipped sessions: {active_subscription.skipped_sessions}")
+                    else:
+                        logger.info(f"Safe cancellation: Skipped sessions limit reached for student {student_id}. Session not added.")
+                    
+                    # IMPORTANT: session_deducted remains True because the session is accounted for as a skipped session.
+                    # It is not returned to sessions_left, but it is also not available for future deductions.
+                else:
+                    logger.info(f"Safe cancellation: No session deduction was recorded for student {student_id} on training {training_id}")
 
-        invoice = session.query(Invoice).filter(
-            and_(
-                Invoice.student_id == student_id,
-                Invoice.training_id == training_id,
-                Invoice.status != InvoiceStatus.CANCELLED
-            )
-        ).first()
-
-        if invoice:
-            try:
-                # Delegate to InvoiceService for cancellation
-                self.financial_service.cancel_invoice(session, invoice.id, student_training.cancelled_by_id or 1)
-                logger.info(f"Safe cancellation: Invoice {invoice.id} cancelled.")
-            except Exception as e:
-                logger.error(f"Error cancelling invoice {invoice.id}: {e}")
+        # Pay-per-session user
         else:
-            logger.info(f"Safe cancellation: No invoice found for student {student_id} on training {training_id}")
+            invoice = session.query(Invoice).filter(
+                and_(
+                    Invoice.student_id == student_id,
+                    Invoice.training_id == training_id,
+                    Invoice.status != InvoiceStatus.CANCELLED
+                )
+            ).first()
+
+            if invoice:
+                try:
+                    if invoice.status == InvoiceStatus.PAID:
+                        self.financial_service._refund_paid_invoice(session, invoice, cancelled_by_id=student_training.attendance_marked_by_id or 1)
+                    else:
+                        invoice_crud.cancel_invoice(session, invoice.id, cancelled_by_id=student_training.attendance_marked_by_id or 1)
+                    logger.info(f"Safe cancellation: Invoice {invoice.id} handled (status: {invoice.status}).")
+                except Exception as e:
+                    logger.exception(f"Error cancelling/refunding invoice {invoice.id}: {e}")
+            else:
+                logger.info(f"Safe cancellation: No invoice found for student {student_id} on training {training_id}")
 
     def _add_student_to_training_logic(
         self,
@@ -380,56 +445,81 @@ class RealTrainingService:
         student_id: int,
         update_data: RealTrainingStudentUpdate,
     ) -> str:
-        training_datetime = datetime.combine(db_training.training_date, db_training.start_time)
-        if training_datetime.tzinfo is None:
-            training_datetime = training_datetime.replace(tzinfo=timezone.utc)
-        
+        # Determine whether cancellation is safe according to training type rules
         current_time = datetime.now(timezone.utc)
-        hours_before = (training_datetime - current_time).total_seconds() / 3600
-        
+
         student_training = self._get_student_training(session, db_training.id, student_id)
         if not student_training:
             raise StudentNotOnTraining("Студент не найден в тренировке")
-        
-        if hours_before >= SAFE_CANCELLATION_HOURS:
+
+        can_cancel_safely = self._check_cancellation_time(db_training, current_time)
+
+        if can_cancel_safely:
             logger.info(f"Safe cancellation for student {student_id}. No penalty - session will be deducted later.")
             student_training.status = AttendanceStatus.CANCELLED_SAFE
             return update_data.cancellation_reason or "Своевременная отмена"
-        
         else:
             logger.warning(f"Unsafe cancellation for student {student_id}. Applying penalty.")
             student_training.status = AttendanceStatus.CANCELLED_PENALTY
-            
+
             self._apply_cancellation_penalty(session, db_training, student_id)
             return update_data.cancellation_reason or "Поздняя отмена"
 
     def _apply_cancellation_penalty(self, session: Session, training: RealTraining, student_id: int) -> None:
-        active_subscription = session.query(StudentSubscription).filter(
-            and_(
-            StudentSubscription.student_id == student_id,
-                StudentSubscription.status == "active",
-            StudentSubscription.start_date <= training.training_date,
-            StudentSubscription.end_date >= training.training_date,
-                StudentSubscription.sessions_left > 0
-            )
+        student_training = self._get_student_training(session, training.id, student_id)
+        if not student_training:
+            # This should not happen if called from _cancel_student_logic
+            logger.error(f"Student training record not found for student {student_id} in training {training.id}")
+            return
+
+        # Subscription user
+        if student_training.subscription_id:
+            active_subscription = session.query(StudentSubscription).filter(
+                StudentSubscription.id == student_training.subscription_id
+            ).first()
+
+            if active_subscription and active_subscription.sessions_left > 0:
+                if not student_training.session_deducted:
+                    active_subscription.sessions_left -= 1
+                    student_training.session_deducted = True
+                    logger.info(f"Late cancellation penalty: Session deducted from subscription for student {student_id}. "
+                               f"Sessions left: {active_subscription.sessions_left}")
+                else:
+                    logger.info(f"Late cancellation penalty: Session already deducted for student {student_id}.")
+            else:
+                # Fallback to invoice if subscription has no sessions left
+                self._handle_pay_per_session_penalty(session, training, student_id)
+        # Pay-per-session user
+        else:
+            self._handle_pay_per_session_penalty(session, training, student_id)
+
+    def _handle_pay_per_session_penalty(self, session: Session, training: RealTraining, student_id: int) -> None:
+        invoice = session.query(Invoice).filter(
+            Invoice.student_id == student_id,
+            Invoice.training_id == training.id,
+            Invoice.status == InvoiceStatus.PENDING
         ).first()
 
-        if active_subscription:
-            active_subscription.sessions_left -= 1
-            logger.info(f"Late cancellation penalty: Session deducted from subscription for student {student_id}. "
-                       f"Sessions left: {active_subscription.sessions_left}")
+        if invoice:
+            # If a PENDING invoice exists, mark it as UNPAID and attempt to pay
+            invoice.status = InvoiceStatus.UNPAID
+            session.add(invoice)
+            session.flush()
+            logger.info(f"Late cancellation penalty: Invoice {invoice.id} for student {student_id} marked as UNPAID.")
+            self.financial_service.attempt_auto_payment(session, invoice.id)
         else:
+            # If no PENDING invoice exists, create a new UNPAID invoice and attempt to pay
             student = student_crud.get_student_by_id(session, student_id)
             if student:
-                penalty_amount = training.training_type.price if training.training_type.price is not None else 100.0
-                
-                # Delegate to InvoiceService for penalty invoice creation
+                penalty_amount = training.training_type.price if training.training_type and training.training_type.price is not None else 100.0
                 invoice_data = InvoiceCreate(
                     student_id=student_id,
                     client_id=student.client_id,
                     amount=penalty_amount,
-                    type=InvoiceType.LATE_CANCELLATION_FEE,
-                    description=f"Штраф: поздняя отмена {training.training_type.name} {training.training_date}"
+                    training_id=training.id,
+                    type=InvoiceType.TRAINING,
+                    description=f"Поздняя отмена {training.training_type.name} {training.training_date}",
+                    status=InvoiceStatus.UNPAID
                 )
-                self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
-                logger.info(f"Late cancellation penalty: Invoice created for student {student_id}.")
+                new_invoice = self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
+                logger.info(f"Late cancellation penalty: New UNPAID invoice {new_invoice.id} created for student {student_id}.")

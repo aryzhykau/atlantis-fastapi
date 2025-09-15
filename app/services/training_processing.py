@@ -11,9 +11,7 @@ from app.models import (
     StudentSubscription,
     Invoice,
     InvoiceStatus,
-    InvoiceType,
-    User,
-    UserRole
+    InvoiceType
 )
 from app.models.real_training import AttendanceStatus
 from app.schemas.invoice import InvoiceCreate
