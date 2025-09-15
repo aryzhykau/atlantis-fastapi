@@ -4,7 +4,6 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 

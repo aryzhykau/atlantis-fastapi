@@ -1,7 +1,6 @@
-from sqlalchemy import Column, Integer, String, Date, Boolean, ForeignKey, Float, Table, DateTime
+from sqlalchemy import Column, Integer, String, Date, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
 from app.database import Base
-from datetime import date, datetime
 
 
 # Модель студента

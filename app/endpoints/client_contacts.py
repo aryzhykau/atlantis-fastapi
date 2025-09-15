@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
-from app.schemas.user import UserRole
 from app.models.client_contact_task import ClientContactReason as ModelReason, ClientContactStatus as ModelStatus
 from app.schemas.client_contact_task import (
     ClientContactTaskCreate,

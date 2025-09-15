@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Date, Boolean, Enum, Float, Date
 from sqlalchemy.orm import validates, relationship
 from app.database import Base
 from enum import Enum as PyEnum
-from datetime import date, datetime
+from datetime import date
 
 
 # Роли пользователей

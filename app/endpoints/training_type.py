@@ -15,9 +15,7 @@ from app.crud.training_type import (
     get_training_type,
     get_training_types,
     update_training_type,
-    delete_training_type,
 )
-from app.schemas.user import UserRole
 
 logger = logging.getLogger(__name__)
 

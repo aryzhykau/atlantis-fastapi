@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -256,7 +255,7 @@ def process_auto_renewals_endpoint(
     try:
         renewed_subscriptions = service.process_auto_renewals(days_back=days_back)
         return {
-            "message": f"Successfully processed auto-renewals",
+            "message": "Successfully processed auto-renewals",
             "days_back": days_back,
             "renewals_processed": len(renewed_subscriptions),
             "subscription_ids": [sub.id for sub in renewed_subscriptions]

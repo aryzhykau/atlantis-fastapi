@@ -1,4 +1,4 @@
-from datetime import date, timedelta, datetime, timezone
+from datetime import date, datetime, timezone
 from typing import List, Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -117,7 +117,7 @@ def get_student_subscriptions(
     """
     Получение абонементов студента
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     query = db.query(StudentSubscription).filter(
         StudentSubscription.student_id == student_id
     )
@@ -161,7 +161,7 @@ def get_student_subscriptions_by_status(
     """
     Получение абонементов студента по статусу
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     now = datetime.now().replace(microsecond=0)
     if status == "active":
         return db.query(StudentSubscription).filter(

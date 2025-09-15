@@ -1,6 +1,5 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import pytest
-from sqlalchemy.orm import Session
 
 from app.models import Subscription, StudentSubscription
 

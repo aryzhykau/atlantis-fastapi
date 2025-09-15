@@ -5,7 +5,7 @@ Handles trainer salary calculations and payments based on training cancellations
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -13,8 +13,6 @@ from sqlalchemy.orm import Session
 from app.crud import real_training as real_training_crud
 from app.crud import user as user_crud
 from app.services.financial import FinancialService
-from app.models.real_training import AttendanceStatus
-from app.schemas.expense import ExpenseCreate
 
 logger = logging.getLogger(__name__)
 

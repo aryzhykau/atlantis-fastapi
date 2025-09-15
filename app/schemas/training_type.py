@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Optional
 from datetime import time
-from enum import Enum
 
 
 # Обобщенная схема для TrainingType

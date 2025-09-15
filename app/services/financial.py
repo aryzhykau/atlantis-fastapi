@@ -3,7 +3,6 @@ import logging
 from typing import List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, or_
 
 from app.crud import invoice as invoice_crud
 from app.crud import payment as payment_crud
@@ -623,7 +622,6 @@ class FinancialService:
         - reason: str (explanation)
         - remaining_students_count: int
         """
-        from datetime import timedelta
         
         training = real_training_crud.get_real_training(self.db, training_id)
         if not training:

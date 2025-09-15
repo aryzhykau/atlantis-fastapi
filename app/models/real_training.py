@@ -1,5 +1,4 @@
-from datetime import date, time, datetime
-from typing import Optional
+from datetime import datetime
 from sqlalchemy import Column, Integer, Date, Time, ForeignKey, Boolean, String, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 

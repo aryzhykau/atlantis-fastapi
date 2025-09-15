@@ -11,6 +11,7 @@ class InvoiceStatus(str, Enum):
     UNPAID = "UNPAID"  # Неоплачен
     PAID = "PAID"  # Оплачен
     CANCELLED = "CANCELLED"  # Отменен
+    PENDING = "PENDING"  # В ожидании (новый статус)
 
 
 class InvoiceType(str, Enum):

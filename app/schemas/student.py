@@ -1,9 +1,9 @@
-from pydantic import BaseModel, Field, validator, computed_field
+from pydantic import BaseModel, validator, computed_field
 from datetime import date, datetime
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.schemas.real_training_student import RealTrainingStudentResponse
+    pass
 
 
 # Базовая схема (поля для всех студентов)

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from datetime import time, date, datetime, timedelta
+from datetime import time, date
 from typing import Optional, List
 
 from app.schemas.student import StudentResponse

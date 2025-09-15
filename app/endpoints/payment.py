@@ -16,7 +16,7 @@ from app.schemas.payment import (
 from app.services.financial import FinancialService
 from app.crud import payment as crud_payment
 from app.crud import user as crud_user
-from app.errors.payment_errors import PaymentError, PaymentNotFound, InsufficientBalance
+from app.errors.payment_errors import PaymentError, PaymentNotFound
 
 logger = logging.getLogger(__name__)
 

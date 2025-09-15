@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import Optional
 
-from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
 
 from app.crud import real_training as crud
 from app.crud import student as student_crud
@@ -11,13 +11,10 @@ from app.crud import invoice as invoice_crud
 from app.models import (
     RealTraining,
     RealTrainingStudent,
-    Student,
     StudentSubscription,
     Invoice,
     InvoiceStatus,
-    InvoiceType,
-    User,
-    UserRole
+    InvoiceType
 )
 from app.models.real_training import AttendanceStatus
 from app.schemas.real_training import (
@@ -32,7 +29,6 @@ from app.services.financial import FinancialService
 from app.services.subscription import SubscriptionService
 from app.services.trainer_salary import TrainerSalaryService
 from app.errors.real_training_errors import (
-    RealTrainingError,
     TrainingNotFound,
     StudentNotOnTraining,
     StudentAlreadyRegistered,
@@ -40,7 +36,7 @@ from app.errors.real_training_errors import (
     SubscriptionRequired,
     InsufficientSessions
 )
-from app.schemas.invoice import InvoiceCreate, TrainingInvoiceCreate
+from app.schemas.invoice import InvoiceCreate
 import enum as _enum
 
 logger = logging.getLogger(__name__)
@@ -333,10 +329,17 @@ class RealTrainingService:
 
             if active_subscription:
                 if student_training.session_deducted:
-                    active_subscription.sessions_left += 1
-                    student_training.session_deducted = False
-                    logger.info(f"Safe cancellation: Session returned to subscription for student {student_id} on training {training_id}. "
-                               f"Sessions left: {active_subscription.sessions_left} (returned)")
+                    # If a session was deducted, it means it was counted against the subscription.
+                    # Now, instead of returning it to sessions_left, add to skipped_sessions (max 3).
+                    if active_subscription.skipped_sessions < 3:
+                        active_subscription.skipped_sessions += 1
+                        logger.info(f"Safe cancellation: Session added to skipped_sessions for student {student_id} on training {training_id}. "
+                                   f"Skipped sessions: {active_subscription.skipped_sessions}")
+                    else:
+                        logger.info(f"Safe cancellation: Skipped sessions limit reached for student {student_id}. Session not added.")
+                    
+                    # IMPORTANT: session_deducted remains True because the session is accounted for as a skipped session.
+                    # It is not returned to sessions_left, but it is also not available for future deductions.
                 else:
                     logger.info(f"Safe cancellation: No session deduction was recorded for student {student_id} on training {training_id}")
 

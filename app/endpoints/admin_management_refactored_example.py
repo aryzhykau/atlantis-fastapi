@@ -5,18 +5,16 @@ This shows the before/after comparison.
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
 # NEW: Import the simple get_current_user dependency
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import (
-    AdminCreate, AdminUpdate, AdminResponse, AdminStatusUpdate, 
-    AdminsList, UserRole
+    AdminCreate, AdminUpdate, AdminResponse, AdminsList
 )
 from app.crud.admin import (
     get_admin_by_id, get_all_admins, create_admin, update_admin,
-    update_admin_status, admin_exists_by_email
+    admin_exists_by_email
 )
 
 router = APIRouter(prefix="/admin-management", tags=["Admin Management"])

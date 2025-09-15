@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone, timedelta, date
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -8,7 +8,6 @@ from app.crud import subscription as crud
 from app.crud import student as student_crud
 from app.models import (
     Subscription,
-    Student,
     StudentSubscription,
     InvoiceStatus,
     InvoiceType
@@ -324,9 +323,24 @@ class SubscriptionService:
                 
                 new_subscription = crud.create_student_subscription(session, new_subscription_data)
 
-                # For delayed renewals, transfer all unused sessions; for current renewals, limit to 3
-                max_sessions_to_transfer = subscription.sessions_left if is_delayed_renewal else min(3, subscription.sessions_left)
-                crud.transfer_sessions(session, subscription, new_subscription, max_sessions_to_transfer)
+                # Reconcile borrowed sessions from the old subscription
+                if subscription.borrowed_sessions_count > 0:
+                    # Ensure we don't go below zero sessions_left on the new subscription
+                    deduction_amount = min(new_subscription.sessions_left, subscription.borrowed_sessions_count)
+                    new_subscription.sessions_left -= deduction_amount
+                    logger.info(f"Reconciled {deduction_amount} borrowed sessions from old subscription {subscription.id} to new subscription {new_subscription.id}. New sessions_left: {new_subscription.sessions_left}")
+                    subscription.borrowed_sessions_count = 0 # Reset borrowed count on old subscription
+
+                # Transfer skipped sessions from old subscription to new subscription's transferred_sessions
+                if subscription.skipped_sessions > 0:
+                    new_subscription.transferred_sessions += subscription.skipped_sessions
+                    logger.info(f"Transferred {subscription.skipped_sessions} skipped sessions from old subscription {subscription.id} to new subscription {new_subscription.id}")
+                    subscription.skipped_sessions = 0
+
+                # Sessions left from the old subscription are lost (not transferred)
+                subscription.sessions_left = 0
+                session.add(subscription)
+                session.add(new_subscription)
 
                 # Create appropriate invoice description
                 if is_delayed_renewal:
@@ -349,7 +363,7 @@ class SubscriptionService:
                 
                 # Call the financial service method
                 self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
-                logger.debug(f"Created invoice for auto-renewal")
+                logger.debug("Created invoice for auto-renewal")
                 
                 crud.update_subscription_auto_renewal_invoice(
                     session, 
@@ -361,8 +375,7 @@ class SubscriptionService:
                 
                 if is_delayed_renewal:
                     logger.info(f"Successfully processed delayed auto-renewal for subscription {subscription.id} "
-                              f"(expired {days_expired} days ago) for student {subscription.student_id}, "
-                              f"transferred {max_sessions_to_transfer} sessions")
+                              f"(expired {days_expired} days ago) for student {subscription.student_id}")
                 else:
                     logger.info(f"Successfully auto-renewed subscription {subscription.id} for student {subscription.student_id}")
                 

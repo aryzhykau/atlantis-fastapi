@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import datetime
+from typing import Optional
 
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import TrainerCreate, TrainerResponse, TrainerUpdate, TrainersList, UserRole, StatusUpdate
-from app.schemas.payment import PaymentResponse, PaymentHistoryFilterRequest, PaymentHistoryListResponse, PaymentListResponse, PaymentExtendedListResponse
+from app.schemas.payment import PaymentHistoryFilterRequest, PaymentHistoryListResponse, PaymentExtendedListResponse
 from app.crud.trainer import (create_trainer, get_trainer, get_all_trainers,
                               update_trainer, delete_trainer, update_trainer_status)
 from app.services.financial import FinancialService
