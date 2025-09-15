@@ -20,7 +20,8 @@ class DailyOperationsService:
         tomorrow = date.today() + timedelta(days=1)
         trainings_to_process = self.db.query(RealTraining).filter(
             RealTraining.training_date == tomorrow,
-            RealTraining.processed_at.is_(None)
+            RealTraining.processed_at.is_(None),
+            RealTraining.cancelled_at.is_(None) # Exclude cancelled trainings
         ).all()
 
         for training in trainings_to_process:
