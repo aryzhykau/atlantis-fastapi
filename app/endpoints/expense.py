@@ -1,9 +1,10 @@
-from typing import List
-from fastapi import APIRouter, Depends
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
-from app.schemas.expense import Expense, ExpenseCreate, ExpenseType, ExpenseTypeCreate
+from app.schemas.expense import Expense, ExpenseCreate, ExpenseUpdate, ExpenseType, ExpenseTypeCreate
 from app.services.financial import FinancialService
+from app.auth.permissions import get_current_user
 
 router = APIRouter(
     prefix="/expenses",
@@ -12,15 +13,31 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=Expense)
-def create_expense(expense: ExpenseCreate, db: Session = Depends(get_db)):
+def create_expense(expense: ExpenseCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user(["TRAINER", "ADMIN", "OWNER"]))):
     financial_service = FinancialService(db)
     return financial_service.create_expense(expense_data=expense)
 
 @router.get("/", response_model=List[Expense])
-def read_expenses(user_id: int = None, expense_type_id: int = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_expenses(user_id: int = None, expense_type_id: int = None, start_date: str = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     financial_service = FinancialService(db)
-    expenses = financial_service.get_expenses(user_id=user_id, expense_type_id=expense_type_id, skip=skip, limit=limit)
+    expenses = financial_service.get_expenses(user_id=user_id, expense_type_id=expense_type_id, start_date=start_date, skip=skip, limit=limit)
     return expenses
+
+@router.put("/{expense_id}", response_model=Expense)
+def update_expense(expense_id: int, expense: ExpenseUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user(["TRAINER", "ADMIN", "OWNER"]))):
+    financial_service = FinancialService(db)
+    db_expense = financial_service.update_expense(expense_id, expense)
+    if db_expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return db_expense
+
+@router.delete("/{expense_id}", response_model=Expense)
+def delete_expense(expense_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user(["TRAINER", "ADMIN", "OWNER"]))):
+    financial_service = FinancialService(db)
+    db_expense = financial_service.delete_expense(expense_id)
+    if db_expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return db_expense
 
 @router.post("/types/", response_model=ExpenseType)
 def create_expense_type(expense_type: ExpenseTypeCreate, db: Session = Depends(get_db)):

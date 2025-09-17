@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -12,7 +12,7 @@ class Expense(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     expense_type_id = Column(Integer, ForeignKey("expense_types.id"), nullable=False)
     amount = Column(Float, nullable=False)
-    expense_date = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    expense_date = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     description = Column(Text, nullable=True)
 
     # Relationships

@@ -12,6 +12,12 @@ class ExpenseBase(BaseModel):
 class ExpenseCreate(ExpenseBase):
     pass
 
+class ExpenseUpdate(BaseModel):
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    expense_date: Optional[datetime] = None
+    expense_type_id: Optional[int] = None
+
 class Expense(ExpenseBase):
     id: int
 
