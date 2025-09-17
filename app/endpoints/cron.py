@@ -7,7 +7,8 @@ from app.core.security import verify_api_key
 from app.auth.permissions import get_current_user
 from app.models import User, UserRole
 from app.services.subscription import SubscriptionService
-from app.services.training_processing import TrainingProcessingService
+
+
 from app.services.daily_operations import DailyOperationsService
 from app.services.financial import FinancialService
 from app.services.client_contact import ClientContactService
@@ -17,25 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cron", tags=["cron"])
 
-@router.post("/auto-mark-attendance")
-def auto_mark_attendance_endpoint(
-    current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
-    db: Session = Depends(get_db),
-):
-    """Автоматическая отметка посещаемости"""
-    
-    try:
-        training_processing_service = TrainingProcessingService(db)
-        result = training_processing_service.auto_mark_attendance(current_user["id"])
-        
-        return {
-            "message": "Auto attendance marking completed",
-            "result": result,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error in auto mark attendance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/auto-renewal", dependencies=[Depends(verify_api_key)])
@@ -101,39 +84,7 @@ def process_invoices_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/generate-invoices", dependencies=[Depends(verify_api_key)])
-def generate_invoices(db: Session = Depends(get_db)):
-    """
-    Эндпоинт для генерации инвойсов за тренировки на завтра.
-    Защищен API ключом (передается в заголовке X-API-Key).
-    Может вызываться внешним сервисом по расписанию (например, Google Apps Script).
-    """
-    try:
-        # Получаем системного администратора
-        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
-        if not admin:
-            return {
-                "success": False,
-                "error": "No admin user found in the system",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-        # Запускаем генерацию инвойсов
-        service = TrainingProcessingService(db)
-        result = service.process_tomorrow_trainings(admin.id)
-        
-        return {
-            "success": True,
-            "result": result,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        } 
+ 
 
 
 @router.post("/process-daily-operations", dependencies=[Depends(verify_api_key)])
@@ -145,14 +96,15 @@ def process_daily_operations_endpoint(db: Session = Depends(get_db)):
     """
     try:
         service = DailyOperationsService(db)
-        result = service.process_tomorrows_trainings()
+        result = service.process_daily_operations()
         
         return {
             "status": "success", 
             "message": "Daily operations completed successfully",
-            "students_updated": result["students_updated"],
-            "trainings_processed": result["trainings_processed"],
-            "processing_date": result["processing_date"],
+            "attendance_marking_students_updated": result.get("marked_students_present"),
+            "financial_processing_students_updated": result.get("students_updated_financial"),
+            "financial_processing_trainings_processed": result.get("trainings_processed_financial"),
+            "financial_processing_date": result.get("processing_date_financial"),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
