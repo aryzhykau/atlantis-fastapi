@@ -9,23 +9,76 @@ from app.services.financial import FinancialService
 logger = logging.getLogger(__name__)
 
 class DailyOperationsService:
-    def __init__(self, db: Session):
-        self.db = db
-        self.financial_service = FinancialService(db)
-
-    def process_tomorrows_trainings(self) -> None:
+    def _auto_mark_todays_attendance(self) -> None:
         """
-        Processes all trainings scheduled for the next day.
+        Automatically marks attendance for today's trainings.
+        Finds all of today's trainings and marks students with
+        a 'REGISTERED' status as 'PRESENT'.
         """
-        tomorrow = date.today() + timedelta(days=1)
-        trainings_to_process = self.db.query(RealTraining).filter(
-            RealTraining.training_date == tomorrow,
-            RealTraining.processed_at.is_(None),
-            RealTraining.cancelled_at.is_(None) # Exclude cancelled trainings
+        logger.info("Starting auto-marking attendance for today's trainings...")
+        today = date.today()
+        
+        todays_trainings = self.db.query(RealTraining).filter(
+            RealTraining.training_date == today
         ).all()
 
+        marked_students = 0
+        for training in todays_trainings:
+            for student_training in training.students:
+                if student_training.status == AttendanceStatus.REGISTERED:
+                    student_training.status = AttendanceStatus.PRESENT
+                    self.db.add(student_training)
+                    marked_students += 1
+        
+        if marked_students > 0:
+            logger.info(f"Auto-marked {marked_students} students as PRESENT.")
+        else:
+            logger.info("No students to auto-mark for today's trainings.")
+
+    def process_daily_operations(self) -> dict:
+        """
+        Main entry point for daily operations.
+        1. Auto-marks attendance for today's trainings.
+        2. Processes trainings for the next day for financial purposes.
+        """
+        logger.info("Starting daily operations...")
+
+        # 1. Auto-mark attendance for today's trainings
+        self._auto_mark_todays_attendance()
+
+        # 2. Process tomorrow's trainings
+        processing_date = date.today() + timedelta(days=1)
+        logger.info(f"Processing trainings for date: {processing_date}")
+        
+        trainings_to_process = self.db.query(RealTraining).filter(
+            RealTraining.training_date == processing_date,
+            RealTraining.processed_at.is_(None),
+            RealTraining.cancelled_at.is_(
+                None
+            ),
+        ).all()
+
+        students_updated = 0
         for training in trainings_to_process:
-            self._process_training(training)
+            logger.info(
+                f"Processing training {training.id} for date {training.training_date}"
+            )
+            for student_training in training.students:
+                self._process_student(student_training)
+                students_updated += 1
+            training.processed_at = date.today()
+            self.db.add(training)
+
+        self.db.commit()
+
+        logger.info("Daily operations completed.")
+        return {
+            "students_updated_financial": students_updated,
+            "trainings_processed_financial": len(trainings_to_process),
+            "processing_date_financial": processing_date.isoformat(),
+        }
+
+    
 
     @transactional
     def _process_training(self, training: RealTraining) -> None:
@@ -156,7 +209,7 @@ class DailyOperationsService:
         if not invoice:
             return
 
-        if student_training.status in [AttendanceStatus.REGISTERED, AttendanceStatus.PRESENT, AttendanceStatus.LATE_CANCEL, AttendanceStatus.NO_SHOW]:
+        if student_training.status in [AttendanceStatus.REGISTERED, AttendanceStatus.PRESENT, AttendanceStatus.CANCELLED_PENALTY, AttendanceStatus.ABSENT]:
             invoice.status = InvoiceStatus.UNPAID
             self.db.add(invoice)
             self.db.flush()
