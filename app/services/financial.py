@@ -14,7 +14,7 @@ from app.crud import expense as expense_crud
 from app.models import Invoice, InvoiceStatus, InvoiceType, Payment, User, PaymentHistory, Expense, ExpenseType
 from app.models.payment_history import OperationType
 from app.schemas.invoice import InvoiceCreate
-from app.schemas.expense import ExpenseCreate, ExpenseTypeCreate
+from app.schemas.expense import ExpenseCreate, ExpenseTypeCreate, ExpenseUpdate
 from app.schemas.user import UserUpdate
 from app.database import transactional
 
@@ -595,10 +595,10 @@ class FinancialService:
         return expense_crud.create_expense(self.db, expense=expense_data)
 
     def get_expenses(
-        self, user_id: Optional[int] = None, expense_type_id: Optional[int] = None, skip: int = 0, limit: int = 100
+        self, user_id: Optional[int] = None, expense_type_id: Optional[int] = None, start_date: Optional[str] = None, skip: int = 0, limit: int = 100
     ) -> List[Expense]:
         return expense_crud.get_expenses(
-            self.db, user_id=user_id, expense_type_id=expense_type_id, skip=skip, limit=limit
+            self.db, user_id=user_id, expense_type_id=expense_type_id, start_date=start_date, skip=skip, limit=limit
         )
 
     def create_expense_type(self, expense_type_data: ExpenseTypeCreate) -> ExpenseType:
@@ -606,6 +606,12 @@ class FinancialService:
 
     def get_expense_types(self, skip: int = 0, limit: int = 100) -> List[ExpenseType]:
         return expense_crud.get_expense_types(self.db, skip=skip, limit=limit)
+
+    def update_expense(self, expense_id: int, expense: ExpenseUpdate) -> Optional[Expense]:
+        return expense_crud.update_expense(self.db, expense_id=expense_id, expense=expense)
+
+    def delete_expense(self, expense_id: int) -> Optional[Expense]:
+        return expense_crud.delete_expense(self.db, expense_id=expense_id)
 
     def calculate_trainer_salary_for_cancellation(
         self, 
