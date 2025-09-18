@@ -9,6 +9,9 @@ from app.services.financial import FinancialService
 logger = logging.getLogger(__name__)
 
 class DailyOperationsService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.financial_service = FinancialService(db)
     def _auto_mark_todays_attendance(self) -> None:
         """
         Automatically marks attendance for today's trainings.
