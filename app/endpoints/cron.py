@@ -12,6 +12,8 @@ from app.services.subscription import SubscriptionService
 from app.services.daily_operations import DailyOperationsService
 from app.services.financial import FinancialService
 from app.services.client_contact import ClientContactService
+from app.services.trainer_salary import TrainerSalaryService
+from datetime import date
 import logging
 
 logger = logging.getLogger(__name__)
@@ -129,4 +131,30 @@ def detect_returned_clients_endpoint(db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Error in detect-returned-clients: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@router.post("/finalize-salaries", dependencies=[Depends(verify_api_key)])
+def finalize_salaries_endpoint(
+    processing_date: date,
+    db: Session = Depends(get_db),
+):
+    """
+    Finalize per-training salaries for a given date.
+
+    Protected by API key (X-API-Key). Intended to be called by a scheduler.
+    Uses processed_by_id=0 to indicate the system process.
+    """
+    try:
+        service = TrainerSalaryService(db)
+        result = service.finalize_salaries_for_date(processing_date=processing_date, processed_by_id=0)
+
+        return {
+            "message": "Salaries finalized",
+            "result": result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in finalize-salaries cron: {e}")
         raise HTTPException(status_code=500, detail=str(e))
