@@ -15,6 +15,7 @@ from app.schemas.trainer_training_type_salary import (
 )
 from app.schemas.user import UserRole
 from app.services.trainer_salary import TrainerSalaryService
+from app.core.security import verify_api_key
 
 router = APIRouter()
 
@@ -170,28 +171,6 @@ def get_trainer_salary_preview(
     response_model=SalaryFinalizationResponse,
     summary="Finalize trainer salaries for a specific date",
 )
-def finalize_trainer_salaries(
-    processing_date: date = Query(..., description="The date to process salaries for"),
-    current_user: dict = Depends(get_current_user(["ADMIN", "OWNER"])),
-    db: Session = Depends(get_db),
-):
-    """
-    Finalizes all per-training salaries for a given date.
-
-    This is a system-level endpoint intended to be called by a scheduled job.
-    It iterates through all eligible trainings for the day, creates the official
-    `Expense` records, and marks the trainings as processed.
-    """
-    service = TrainerSalaryService(db)
-    try:
-        result = service.finalize_salaries_for_date(
-            processing_date=processing_date, processed_by_id=current_user["id"]
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error during salary finalization: {str(e)}"
-        )
 
 
 @router.post(
