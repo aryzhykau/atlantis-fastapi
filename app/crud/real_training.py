@@ -115,6 +115,24 @@ def get_real_trainings_by_date(db: Session, date: date) -> List[RealTraining]:
     return db.query(RealTraining).filter(RealTraining.training_date == date).order_by(RealTraining.start_time).all()
 
 
+def get_real_trainings_by_trainer_and_date(
+    db: Session, trainer_id: int, target_date: date
+) -> List[RealTraining]:
+    """
+    Get all trainings for a specific trainer on a specific date.
+    """
+    return (
+        db.query(RealTraining)
+        .options(joinedload(RealTraining.training_type))
+        .filter(
+            RealTraining.responsible_trainer_id == trainer_id,
+            RealTraining.training_date == target_date,
+        )
+        .order_by(RealTraining.start_time)
+        .all()
+    )
+
+
 def create_real_training(
     db: Session, training_data: RealTrainingCreate
 ) -> RealTraining:
