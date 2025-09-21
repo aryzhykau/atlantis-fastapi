@@ -37,6 +37,19 @@ def get_trainer_training_type_salaries_by_trainer_id(
     )
 
 
+def get_trainer_training_type_salary_by_trainer_and_type(
+    db: Session, trainer_id: int, training_type_id: int
+) -> TrainerTrainingTypeSalary | None:
+    return (
+        db.query(TrainerTrainingTypeSalary)
+        .filter(
+            TrainerTrainingTypeSalary.trainer_id == trainer_id,
+            TrainerTrainingTypeSalary.training_type_id == training_type_id,
+        )
+        .first()
+    )
+
+
 def update_trainer_training_type_salary(
     db: Session, salary_id: int, salary_update: TrainerTrainingTypeSalaryUpdate
 ) -> TrainerTrainingTypeSalary | None:

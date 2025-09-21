@@ -10,6 +10,8 @@ from app.schemas.trainer_training_type_salary import (
     TrainerTrainingTypeSalaryCreate,
     TrainerTrainingTypeSalaryResponse,
     TrainerTrainingTypeSalaryUpdate,
+    TrainerSalaryPreviewResponse,
+    SalaryFinalizationResponse,
 )
 from app.schemas.user import UserRole
 from app.services.trainer_salary import TrainerSalaryService
@@ -122,6 +124,74 @@ def get_trainer_salary_summary(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving salary summary: {str(e)}")
+
+
+@router.get(
+    "/trainers/{trainer_id}/salary/preview",
+    response_model=TrainerSalaryPreviewResponse,
+    summary="Get a real-time preview of a trainer's daily salary",
+)
+def get_trainer_salary_preview(
+    trainer_id: int,
+    preview_date: date = Query(..., description="Date to preview the salary for"),
+    current_user: dict = Depends(get_current_user(["ADMIN", "TRAINER", "OWNER"])),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a real-time, non-binding preview of a trainer's salary for a specific day.
+
+    - For **per-training** salary trainers, this calculates potential earnings based on
+      all trainings for the day that are marked as `trainer_salary_eligible`.
+    - For **fixed-salary** trainers, this simply shows their fixed salary status.
+    - This endpoint **does not** create any financial records (expenses).
+    """
+    if current_user["role"] == UserRole.TRAINER and current_user["id"] != trainer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Trainers can only view their own salary information",
+        )
+
+    service = TrainerSalaryService(db)
+    try:
+        preview_data = service.get_trainer_salary_preview(
+            trainer_id=trainer_id, preview_date=preview_date
+        )
+        return preview_data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error calculating salary preview: {str(e)}"
+        )
+
+
+@router.post(
+    "/system/salaries/finalize",
+    response_model=SalaryFinalizationResponse,
+    summary="Finalize trainer salaries for a specific date",
+)
+def finalize_trainer_salaries(
+    processing_date: date = Query(..., description="The date to process salaries for"),
+    current_user: dict = Depends(get_current_user(["ADMIN", "OWNER"])),
+    db: Session = Depends(get_db),
+):
+    """
+    Finalizes all per-training salaries for a given date.
+
+    This is a system-level endpoint intended to be called by a scheduled job.
+    It iterates through all eligible trainings for the day, creates the official
+    `Expense` records, and marks the trainings as processed.
+    """
+    service = TrainerSalaryService(db)
+    try:
+        result = service.finalize_salaries_for_date(
+            processing_date=processing_date, processed_by_id=current_user["id"]
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error during salary finalization: {str(e)}"
+        )
 
 
 @router.post(
