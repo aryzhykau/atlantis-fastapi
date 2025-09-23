@@ -113,9 +113,14 @@ def create_training_endpoint(
     """
     Создает новую реальную тренировку.
     Если указан template_id, автоматически копирует студентов из шаблона.
+    Если указан trial_student_id, создает тренировку с пробным студентом.
     """
+    service = RealTrainingService(db)
     try:
-        return create_real_training(db, training_data)
+        if training_data.trial_student_id:
+            return service.create_real_training_with_trial_student(training_data)
+        else:
+            return create_real_training(db, training_data)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

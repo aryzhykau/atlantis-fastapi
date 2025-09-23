@@ -31,6 +31,8 @@ def create_student(db: Session, student_data: StudentCreate, client_id: int) -> 
     )
     logger.info(f"new student name: {new_student.first_name} {new_student.last_name}, client_id: {new_student.client_id}")
     db.add(new_student)
+    db.commit()
+    db.refresh(new_student)
     return new_student
 
 

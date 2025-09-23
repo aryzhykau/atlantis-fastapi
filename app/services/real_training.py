@@ -21,7 +21,8 @@ from app.schemas.real_training import (
     RealTrainingStudentCreate,
     RealTrainingStudentUpdate,
     StudentCancellationRequest,
-    TrainingCancellationRequest
+    TrainingCancellationRequest,
+    RealTrainingWithTrialStudentCreate,
 )
 
 from app.database import transactional
@@ -114,6 +115,26 @@ class RealTrainingService:
         """
         with transactional(self.db) as session:
             return self._update_student_attendance_logic(session, training_id, student_id, update_data, marker_id)
+
+    def create_real_training_with_trial_student(
+        self,
+        training_data: RealTrainingWithTrialStudentCreate,
+    ) -> RealTraining:
+        """
+        Создает новую тренировку с одним пробным студентом.
+        """
+        with transactional(self.db) as session:
+            # Create the real training
+            db_training = crud.create_real_training(session, training_data)
+
+            # Add the trial student
+            student_data = RealTrainingStudentCreate(
+                student_id=training_data.student_id,
+                is_trial=True
+            )
+            self._add_student_to_training_logic(session, db_training.id, student_data)
+
+            return db_training
 
     # --- Private Logic Methods (Non-Transactional) ---
 
@@ -384,6 +405,25 @@ class RealTrainingService:
         training = crud.get_real_training(session, training_id)
         if not training:
             raise TrainingNotFound("Тренировка не найдена.")
+        
+        if student_data.is_trial:
+            student_data.requires_payment = False
+            # Check if student already had a trial training
+            had_trial = session.query(RealTrainingStudent).filter(
+                RealTrainingStudent.student_id == student.id,
+                RealTrainingStudent.is_trial == True
+            ).first()
+            if had_trial:
+                raise ValueError("У студента уже была пробная тренировка.")
+
+            # Check if student had any paid trainings
+            had_paid_training = session.query(RealTrainingStudent).filter(
+                RealTrainingStudent.student_id == student.id,
+                RealTrainingStudent.requires_payment == True,
+                RealTrainingStudent.status != AttendanceStatus.CANCELLED_SAFE
+            ).first()
+            if had_paid_training:
+                raise ValueError("Студент уже посещал платные тренировки.")
 
         # Check capacity limits
         if training.training_type.max_participants:
@@ -395,7 +435,7 @@ class RealTrainingService:
             if current_active_students >= training.training_type.max_participants:
                 raise ValueError(f"Тренировка заполнена. Максимальное количество участников: {training.training_type.max_participants}")
 
-        if training.training_type.is_subscription_only:
+        if training.training_type.is_subscription_only and not student_data.is_trial:
             active_subscription = self.subscription_service.get_active_subscription(session, student.id) # Use service method
 
             if not active_subscription:
@@ -404,7 +444,9 @@ class RealTrainingService:
             if active_subscription.sessions_left <= 0 and not active_subscription.is_auto_renew:
                 raise InsufficientSessions("На абонементе закончились занятия и не включено автопродление.")
 
-        return crud.add_student_to_training_db(session, training_id, student_data)
+        requires_payment = not student_data.is_trial
+
+        return crud.add_student_to_training_db(session, training_id, student_data, is_trial=student_data.is_trial, requires_payment=requires_payment)
 
     def _update_student_attendance_logic(
         self,
