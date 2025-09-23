@@ -3,7 +3,7 @@ from typing import Optional, List
 from app.schemas.user import TrainerResponse
 from app.schemas.training_type import TrainingTypeResponse
 from pydantic import BaseModel, ConfigDict
-from app.schemas.real_training_student import RealTrainingStudentResponse
+from app.schemas.real_training_student import RealTrainingStudentResponse, RealTrainingStudentCreate
 
 
 class StudentCancellationRequest(BaseModel):
@@ -69,13 +69,7 @@ class StudentCancellationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RealTrainingStudentCreate(BaseModel):
-    """Схема для создания записи студента на тренировку"""
-    student_id: int
-    subscription_id: Optional[int] = None
-    status: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
 
 
 class RealTrainingStudentUpdate(BaseModel):
@@ -83,4 +77,7 @@ class RealTrainingStudentUpdate(BaseModel):
     status: Optional[str] = None
     cancellation_reason: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)
+
+class RealTrainingWithTrialStudentCreate(RealTrainingCreate):
+    student_id: int

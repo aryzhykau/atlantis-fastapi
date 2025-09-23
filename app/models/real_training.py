@@ -61,6 +61,7 @@ class RealTrainingStudent(Base):
     notification_time = Column(DateTime, nullable=True)
     requires_payment = Column(Boolean, nullable=True, default=True)
     session_deducted = Column(Boolean, default=False)
+    is_trial = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     real_training = relationship("RealTraining", back_populates="students")

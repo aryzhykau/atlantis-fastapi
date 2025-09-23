@@ -100,6 +100,10 @@ class DailyOperationsService:
         """
         Processes a single student in a training.
         """
+        if student_training.is_trial:
+            logger.info(f"Student {student_training.student_id} is on a trial for training {student_training.real_training_id}. Skipping financial processing.")
+            return
+
         if student_training.subscription_id:
             self._process_subscription_user(student_training)
         else:

@@ -10,6 +10,7 @@ from app.schemas.student import StudentResponse
 class RealTrainingStudentCreate(BaseModel):
     student_id: int
     template_student_id: Optional[int] = None
+    is_trial: bool = False
 
 
 class RealTrainingStudentUpdate(BaseModel):
@@ -38,6 +39,7 @@ class RealTrainingStudentResponse(BaseModel):
     cancellation_reason: Optional[str] = None
     attendance_marked_at: Optional[datetime] = None
     student: Optional[StudentResponse] = None
+    is_trial: bool
 
     class Config:
         from_attributes = True 

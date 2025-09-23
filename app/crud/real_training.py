@@ -148,15 +148,8 @@ def create_real_training(
         is_template_based=bool(training_data.template_id),
     )
     db.add(db_training)
-    db.commit()
-    db.refresh(db_training)
-    
-    # Загружаем связанные объекты
-    db.refresh(db_training)
-    return db.query(RealTraining).options(
-        joinedload(RealTraining.trainer),
-        joinedload(RealTraining.training_type),
-    ).filter(RealTraining.id == db_training.id).first()
+    db.flush()
+    return db_training
 
 
 def update_real_training(
@@ -230,6 +223,8 @@ def add_student_to_training_db(
     db: Session,
     training_id: int,
     student_data: RealTrainingStudentCreate,
+    is_trial: bool = False,
+    requires_payment: bool = True,
 ) -> RealTrainingStudent:
     """
     Простое добавление студента на тренировку в БД.
@@ -241,10 +236,12 @@ def add_student_to_training_db(
         real_training_id=training_id,
         student_id=student_data.student_id,
         template_student_id=student_data.template_student_id,
-        status=AttendanceStatus.REGISTERED  # По умолчанию - зарегистрирован
+        status=AttendanceStatus.REGISTERED,  # По умолчанию - зарегистрирован
+        is_trial=is_trial,
+        requires_payment=requires_payment
     )
     db.add(db_student)
-    db.commit()
+    db.flush()
     db.refresh(db_student)
     return db_student
 
