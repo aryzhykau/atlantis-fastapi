@@ -10,6 +10,9 @@ def create_training_type(db: Session, training_type: TrainingTypeCreate) -> Trai
     # Если только по подписке — цена не должна сохраняться
     if payload.get("is_subscription_only"):
         payload["price"] = None
+    else:
+        if payload.get("price") is None:
+            raise ValueError("Цена обязательна, если тренировка не только по подписке.")
     db_training_type = TrainingType(**payload)
     db.add(db_training_type)
     print("added")
