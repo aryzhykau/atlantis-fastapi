@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.auth.jwt_handler import verify_jwt_token
+from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.subscription import (
     SubscriptionCreate,
@@ -36,11 +37,9 @@ router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
 @router.post("/", response_model=SubscriptionResponse)
 def create_subscription_endpoint(
         subscription_data: SubscriptionCreate,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Forbidden")
     service = SubscriptionService(db)
     try:
         return service.create_subscription(subscription_data)
@@ -78,16 +77,13 @@ def get_subscription_endpoint(
 def update_subscription_endpoint(
         subscription_id: int,
         subscription_data: SubscriptionUpdate,
-        current_user=Depends(verify_jwt_token),
+        current_user=Depends(get_current_user(["ADMIN", "OWNER"])),
         db: Session = Depends(get_db),
 ):
     """
     Обновление существующего абонемента.
-    Только для админов.
+    Только для админов и владельцев (OWNER).
     """
-    if current_user["role"] != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Only admins can update subscriptions")
-    
     service = SubscriptionService(db)
     try:
         updated_subscription = service.update_subscription(subscription_id, subscription_data)
