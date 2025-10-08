@@ -417,6 +417,7 @@ def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
                         invoice = Invoice(
                             client_id=template_student.student.client_id,
                             student_id=template_student.student_id,
+                            training_id=new_training.id,
                             type=InvoiceType.TRAINING,
                             status="PENDING",
                             amount=template.training_type.price,
