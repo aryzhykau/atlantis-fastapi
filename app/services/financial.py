@@ -658,7 +658,7 @@ class FinancialService:
             }
         
         # Non-fixed salary logic
-        if hours_before >= 5:  # 5+ hours before
+        if hours_before >= 3:  # 3+ hours before
             if remaining_count > 0:
                 return {
                     "should_receive_salary": True,
@@ -669,7 +669,7 @@ class FinancialService:
             else:
                 return {
                     "should_receive_salary": False,
-                    "reason": "No other students remain and cancellation was timely (5+ hours)",
+                    "reason": "No other students remain and cancellation was timely (3+ hours)",
                     "remaining_students_count": remaining_count,
                     "hours_before_training": hours_before
                 }
