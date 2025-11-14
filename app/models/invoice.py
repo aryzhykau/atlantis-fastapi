@@ -35,6 +35,7 @@ class Invoice(Base):
     type = Column(SQLEnum(InvoiceType), nullable=False)  # Тип инвойса
     amount = Column(Float, nullable=False)  # Сумма
     description = Column(String, nullable=False)  # Описание/причина
+    comment = Column(String, nullable=True)  # Комментарий от администратора
     
     # Статус и даты
     status = Column(SQLEnum(InvoiceStatus), nullable=False, default=InvoiceStatus.UNPAID)  # Статус

@@ -178,3 +178,23 @@ def cancel_invoice(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) 
+    
+@router.post("/{invoice_id}/comment", response_model=InvoiceResponse)
+def add_invoice_comment(
+    invoice_id: int,
+    comment: str,
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Добавление комментария к инвойсу.
+    Только для админов и владельцев.
+    """
+    service = FinancialService(db)
+    try:
+        return service.add_invoice_comment(
+            invoice_id=invoice_id,
+            comment=comment
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
