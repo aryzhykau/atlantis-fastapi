@@ -10,7 +10,8 @@ from app.schemas.invoice import (
     SubscriptionInvoiceCreate,
     TrainingInvoiceCreate,
     InvoiceResponse,
-    InvoiceList
+    InvoiceList,
+    InvoiceUpdate
 )
 from app.services.financial import FinancialService
 
@@ -178,23 +179,24 @@ def cancel_invoice(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) 
+
     
-@router.post("/{invoice_id}/comment", response_model=InvoiceResponse)
-def add_invoice_comment(
+@router.put("/{invoice_id}/comment", response_model=InvoiceResponse)
+def update_invoice_comment(
     invoice_id: int,
-    comment: str,
+    update_data: InvoiceUpdate,
     current_user = Depends(get_current_user(["ADMIN", "OWNER"])),
     db: Session = Depends(get_db)
 ):
     """
-    Добавление комментария к инвойсу.
+    Обновление комментария к инвойсу.
     Только для админов и владельцев.
     """
     service = FinancialService(db)
     try:
-        return service.add_invoice_comment(
+        return service.update_invoice_comment(
             invoice_id=invoice_id,
-            comment=comment
+            comment=update_data.comment
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
