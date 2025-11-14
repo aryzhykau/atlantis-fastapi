@@ -89,6 +89,19 @@ class FinancialService:
             return True
 
         return False
+    
+    def update_invoice_comment(self, invoice_id: int, comment: str) -> Invoice:
+        """Updates the comment of an invoice."""
+        invoice = invoice_crud.get_invoice(self.db, invoice_id)
+        if not invoice:
+            raise ValueError("Invoice not found")
+
+        invoice.comment = comment
+        self.db.add(invoice)
+        self.db.commit()
+        self.db.refresh(invoice)
+
+        return invoice
 
     def create_standalone_invoice(
         self, invoice_data: InvoiceCreate, auto_pay: bool = True

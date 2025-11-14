@@ -53,6 +53,7 @@ class InvoiceResponse(BaseModel):
     type: InvoiceType
     amount: float
     description: str
+    comment: Optional[str] = None
     status: InvoiceStatus
     created_at: datetime
     paid_at: Optional[datetime] = None
@@ -70,6 +71,7 @@ class InvoiceUpdate(BaseModel):
     """Схема для обновления инвойса"""
     amount: Optional[float] = Field(None, description="Сумма")
     description: Optional[str] = Field(None, description="Описание/причина")
+    comment: Optional[str] = Field(None, description="Комментарий от администратора")
     status: Optional[InvoiceStatus] = Field(None, description="Статус инвойса")
     paid_at: Optional[datetime] = Field(None, description="Дата оплаты")
     cancelled_at: Optional[datetime] = Field(None, description="Дата отмены")
