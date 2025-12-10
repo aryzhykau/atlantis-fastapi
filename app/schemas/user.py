@@ -30,7 +30,7 @@ class UserBase(BaseModel):
 class ClientCreate(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=50)
     last_name: str = Field(..., min_length=2, max_length=50)
-    date_of_birth: date = Field(..., description="Date of birth")
+    date_of_birth: date | None = Field(None, description="Date of birth")
     is_student: bool = False
     email: EmailStr
     phone_country_code: str = Field(..., min_length=1, max_length=4)
@@ -41,8 +41,8 @@ class ClientCreate(BaseModel):
 
     @field_validator('date_of_birth')
     @classmethod
-    def validate_birth_date(cls, v: date) -> date:
-        if v > date.today():
+    def validate_birth_date(cls, v: date | None) -> date | None:
+        if v is not None and v > date.today():
             raise ValueError('Date of birth cannot be in the future')
         return v
 
