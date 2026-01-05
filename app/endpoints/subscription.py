@@ -24,6 +24,7 @@ from app.errors.subscription_errors import (
     SubscriptionError,
     SubscriptionNotFound,
     SubscriptionNotActive,
+    SubscriptionAlreadyActive,
     SubscriptionAlreadyFrozen,
     SubscriptionNotFrozen
 )
@@ -118,6 +119,8 @@ def add_subscription_to_student(
     except SubscriptionNotFound as e:
         raise HTTPException(status_code=404, detail=str(e))
     except SubscriptionNotActive as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SubscriptionAlreadyActive as e:
         raise HTTPException(status_code=400, detail=str(e))
     except SubscriptionError as e:
         raise HTTPException(status_code=500, detail=str(e))
