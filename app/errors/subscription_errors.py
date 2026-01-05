@@ -12,6 +12,11 @@ class SubscriptionNotActive(SubscriptionError):
     """Raised when an operation is attempted on an inactive subscription."""
     pass
 
+
+class SubscriptionAlreadyActive(SubscriptionError):
+    """Raised when trying to add a subscription while the student already has an active one."""
+    pass
+
 class SubscriptionAlreadyFrozen(SubscriptionError):
     """Raised when trying to freeze an already frozen subscription."""
     pass

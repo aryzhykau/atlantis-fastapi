@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.crud import subscription as crud
@@ -27,6 +28,7 @@ from app.errors.subscription_errors import (
     SubscriptionError,
     SubscriptionNotFound,
     SubscriptionNotActive,
+    SubscriptionAlreadyActive,
     SubscriptionAlreadyFrozen,
     SubscriptionNotFrozen
 )
@@ -136,7 +138,29 @@ class SubscriptionService:
         if not student.is_active:
             raise SubscriptionNotActive("Cannot add subscription to inactive student")
 
-        start_date = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        existing_active_subscription = (
+            session.query(StudentSubscription)
+            .filter(
+                StudentSubscription.student_id == student_id,
+                StudentSubscription.start_date <= now,
+                StudentSubscription.end_date >= now,
+                or_(
+                    StudentSubscription.freeze_start_date.is_(None),
+                    and_(
+                        StudentSubscription.freeze_start_date.isnot(None),
+                        StudentSubscription.freeze_end_date.isnot(None),
+                        StudentSubscription.freeze_end_date < now,
+                    ),
+                ),
+            )
+            .first()
+        )
+
+        if existing_active_subscription:
+            raise SubscriptionAlreadyActive("Student already has an active subscription")
+
+        start_date = now
         end_date = start_date + timedelta(days=subscription.validity_days)
 
         student_subscription_data = StudentSubscriptionCreate(
@@ -153,11 +177,11 @@ class SubscriptionService:
         
         student_subscription = crud.create_student_subscription(session, student_subscription_data)
         
-        # Use InvoiceService's private method, which does not commit
         invoice_data = InvoiceCreate(
             client_id=student.client_id,
             student_id=student_id,
             subscription_id=subscription_id,
+            student_subscription_id=student_subscription.id,
             type=InvoiceType.SUBSCRIPTION,
             amount=subscription.price,
             description=f"Subscription: {subscription.name}",
@@ -165,8 +189,7 @@ class SubscriptionService:
             is_auto_renewal=False
         )
         
-        # Call the financial service method
-        self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
+        self.financial_service.create_standalone_invoice_in_session(session, invoice_data, auto_pay=True)
         
         self.student_service.update_active_subscription_id(session, student)
         session.refresh(student_subscription)
@@ -360,15 +383,18 @@ class SubscriptionService:
                     is_auto_renewal=True
                 )
                 logger.debug(f"Creating invoice with student_subscription_id={new_subscription.id}")
-                
-                # Call the financial service method
-                self.financial_service.create_standalone_invoice(invoice_data, auto_pay=True)
-                logger.debug("Created invoice for auto-renewal")
-                
+
+                invoice = self.financial_service.create_standalone_invoice_in_session(
+                    session,
+                    invoice_data,
+                    auto_pay=True,
+                )
+                logger.debug(f"Created invoice for auto-renewal: invoice_id={invoice.id}")
+
                 crud.update_subscription_auto_renewal_invoice(
-                    session, 
-                    subscription.id, 
-                    new_subscription.id # This should be the invoice ID, not new_subscription.id
+                    session,
+                    subscription.id,
+                    invoice.id,
                 )
                 
                 renewed_subscriptions.append(new_subscription)

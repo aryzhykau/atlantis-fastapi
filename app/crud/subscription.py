@@ -446,7 +446,7 @@ def get_auto_renewal_subscriptions(
                 )
             )
         )
-    ).all()
+    ).with_for_update(skip_locked=True).all()
 
 
 def get_today_auto_renewal_subscriptions(

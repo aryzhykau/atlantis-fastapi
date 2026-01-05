@@ -108,27 +108,39 @@ class FinancialService:
     ) -> Invoice:
         """Creates a new invoice and optionally tries to pay it, all within a single transaction."""
         with transactional(self.db) as session:
-            # Validate existence of related entities
-            client = user_crud.get_user_by_id(session, invoice_data.client_id)
-            if not client:
-                raise ValueError("Client not found")
+            return self.create_standalone_invoice_in_session(session, invoice_data, auto_pay=auto_pay)
 
-            student = student_crud.get_student_by_id(session, invoice_data.student_id)
-            if not student:
-                raise ValueError("Student not found")
+    def create_standalone_invoice_in_session(
+        self,
+        session: Session,
+        invoice_data: InvoiceCreate,
+        *,
+        auto_pay: bool = True,
+    ) -> Invoice:
+        """Creates an invoice using the provided session (no commit)."""
+        # Validate existence of related entities
+        client = user_crud.get_user_by_id(session, invoice_data.client_id)
+        if not client:
+            raise ValueError("Client not found")
 
-            if invoice_data.subscription_id:
-                subscription = subscription_crud.get_subscription_by_id(session, invoice_data.subscription_id)
-                if not subscription:
-                    raise ValueError("Subscription not found")
+        student = student_crud.get_student_by_id(session, invoice_data.student_id)
+        if not student:
+            raise ValueError("Student not found")
 
-            if invoice_data.training_id:
-                training = real_training_crud.get_real_training(session, invoice_data.training_id)
-                if not training:
-                    raise ValueError("Тренировка не найдена")
+        if invoice_data.subscription_id:
+            subscription = subscription_crud.get_subscription_by_id(session, invoice_data.subscription_id)
+            if not subscription:
+                raise ValueError("Subscription not found")
 
-            invoice = self._create_and_process_invoice_logic(session, invoice_data, auto_pay)
-            return invoice
+        if invoice_data.training_id:
+            training = real_training_crud.get_real_training(session, invoice_data.training_id)
+            if not training:
+                raise ValueError("Тренировка не найдена")
+
+        invoice = self._create_and_process_invoice_logic(session, invoice_data, auto_pay)
+        session.flush()
+        session.refresh(invoice)
+        return invoice
 
     def _create_and_process_invoice_logic(
         self, session: Session, invoice_data: InvoiceCreate, auto_pay: bool = True
