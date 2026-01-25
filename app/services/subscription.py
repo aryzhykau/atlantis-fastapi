@@ -330,7 +330,8 @@ class SubscriptionService:
                     new_start_date = current_time
                     logger.info(f"Processing delayed auto-renewal for subscription {subscription.id}, expired {days_expired} days ago")
                 else:
-                    new_start_date = subscription.end_date + timedelta(days=1)
+                    next_day = subscription.end_date + timedelta(days=1)
+                    new_start_date = next_day.replace(hour=0, minute=0, second=0, microsecond=0)
                 
                 new_subscription_data = StudentSubscriptionCreate(
                     student_id=subscription.student_id,
