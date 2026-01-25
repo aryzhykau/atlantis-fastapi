@@ -13,7 +13,7 @@ from app.endpoints import (
     user, health, client, student, trainer, subscription, real_trainings,
     training_type, payment, invoice, cron, expense, training_template,
     training_student_template, trainer_salaries, client_contacts, stats,
-    admin_management
+    admin_management, client_form   
 )
 from app.endpoints import client_contacts
 from app.endpoints import stats
@@ -75,6 +75,8 @@ app.include_router(trainer_salaries.router)
 app.include_router(client_contacts.router)
 app.include_router(stats.router)
 app.include_router(admin_management.router)
+app.include_router(client_form.router)
+
 
 
 @app.get("/")
