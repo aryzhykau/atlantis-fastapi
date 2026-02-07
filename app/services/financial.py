@@ -629,6 +629,12 @@ class FinancialService:
     def create_expense_type(self, expense_type_data: ExpenseTypeCreate) -> ExpenseType:
         return expense_crud.create_expense_type(self.db, expense_type=expense_type_data)
 
+    def update_expense_type(self, expense_type_id: int, expense_type_data: ExpenseTypeCreate) -> Optional[ExpenseType]:
+        return expense_crud.update_expense_type(self.db, expense_type_id=expense_type_id, expense_type=expense_type_data)
+
+    def delete_expense_type(self, expense_type_id: int) -> Optional[ExpenseType]:
+        return expense_crud.delete_expense_type(self.db, expense_type_id=expense_type_id)
+
     def get_expense_types(self, skip: int = 0, limit: int = 100) -> List[ExpenseType]:
         return expense_crud.get_expense_types(self.db, skip=skip, limit=limit)
 

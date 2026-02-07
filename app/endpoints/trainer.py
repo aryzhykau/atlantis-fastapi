@@ -23,6 +23,19 @@ def create_trainer_endpoint(trainer_data: TrainerCreate, current_user = Depends(
 @router.get("/", response_model=TrainersList)
 def get_trainers_endpoint(current_user = Depends(get_current_user(["ADMIN", "OWNER"])), db: Session = Depends(get_db)):
     trainers = get_all_trainers(db)
+    
+    # Скрываем зарплату для не-владельцев
+    if current_user["role"] != "OWNER":
+        safe_trainers = []
+        for t in trainers:
+            # Создаем Pydantic модель из ORM объекта
+            tr = TrainerResponse.model_validate(t)
+            # Принудительно очищаем поля зарплаты
+            tr.salary = None
+            tr.is_fixed_salary = None
+            safe_trainers.append(tr)
+        return TrainersList(trainers=safe_trainers)
+        
     return TrainersList(trainers=trainers)
 
 
@@ -32,6 +45,14 @@ def get_trainer_endpoint(trainer_id: int, current_user = Depends(get_current_use
     trainer = get_trainer(db, trainer_id)
     if not trainer:
         raise HTTPException(status_code=404, detail="Тренер не найден")
+    
+    # Скрываем зарплату для не-владельцев
+    if current_user["role"] != "OWNER":
+        tr = TrainerResponse.model_validate(trainer)
+        tr.salary = None
+        tr.is_fixed_salary = None
+        return tr
+        
     return trainer
 
 
