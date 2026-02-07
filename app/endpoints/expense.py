@@ -40,9 +40,25 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db), current_user:
     return db_expense
 
 @router.post("/types/", response_model=ExpenseType)
-def create_expense_type(expense_type: ExpenseTypeCreate, db: Session = Depends(get_db)):
+def create_expense_type(expense_type: ExpenseTypeCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user(["OWNER"]))):
     financial_service = FinancialService(db)
     return financial_service.create_expense_type(expense_type_data=expense_type)
+
+@router.put("/types/{expense_type_id}", response_model=ExpenseType)
+def update_expense_type(expense_type_id: int, expense_type: ExpenseTypeCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user(["OWNER"]))):
+    financial_service = FinancialService(db)
+    db_expense_type = financial_service.update_expense_type(expense_type_id, expense_type)
+    if db_expense_type is None:
+        raise HTTPException(status_code=404, detail="Expense type not found")
+    return db_expense_type
+
+@router.delete("/types/{expense_type_id}", response_model=ExpenseType)
+def delete_expense_type(expense_type_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user(["OWNER"]))):
+    financial_service = FinancialService(db)
+    db_expense_type = financial_service.delete_expense_type(expense_type_id)
+    if db_expense_type is None:
+        raise HTTPException(status_code=404, detail="Expense type not found")
+    return db_expense_type
 
 @router.get("/types/", response_model=List[ExpenseType])
 def read_expense_types(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):

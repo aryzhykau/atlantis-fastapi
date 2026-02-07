@@ -53,4 +53,25 @@ def get_expense_types(db: Session, skip: int = 0, limit: int = 100) -> List[Expe
     return db.query(ExpenseType).offset(skip).limit(limit).all()
 
 def get_expense_type_by_name(db: Session, name: str) -> Optional[ExpenseType]:
-    return db.query(ExpenseType).filter(ExpenseType.name == name).first() 
+    return db.query(ExpenseType).filter(ExpenseType.name == name).first()
+
+def get_expense_type(db: Session, expense_type_id: int) -> Optional[ExpenseType]:
+    return db.query(ExpenseType).filter(ExpenseType.id == expense_type_id).first()
+
+def update_expense_type(db: Session, expense_type_id: int, expense_type: ExpenseTypeCreate) -> Optional[ExpenseType]:
+    db_expense_type = get_expense_type(db, expense_type_id)
+    if db_expense_type:
+        update_data = expense_type.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_expense_type, key, value)
+        db.add(db_expense_type)
+        db.commit()
+        db.refresh(db_expense_type)
+    return db_expense_type
+
+def delete_expense_type(db: Session, expense_type_id: int) -> Optional[ExpenseType]:
+    db_expense_type = get_expense_type(db, expense_type_id)
+    if db_expense_type:
+        db.delete(db_expense_type)
+        db.commit()
+    return db_expense_type
