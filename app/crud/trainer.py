@@ -11,7 +11,8 @@ def create_trainer(db: Session, trainer_data: TrainerCreate):
         last_name=trainer_data.last_name,
         date_of_birth=trainer_data.date_of_birth,
         email=trainer_data.email,
-        phone=trainer_data.phone,
+        phone_country_code=trainer_data.phone_country_code,
+        phone_number=trainer_data.phone_number,
         salary=trainer_data.salary,
         is_fixed_salary=trainer_data.is_fixed_salary,
         role=UserRole.TRAINER
