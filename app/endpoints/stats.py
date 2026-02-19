@@ -2,13 +2,21 @@ from datetime import datetime, timedelta, timezone, date
 from typing import Dict, Any, List, Tuple
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, and_, or_, case, desc
 from sqlalchemy.orm import Session
 
 from app.auth.permissions import get_current_user
 from app.dependencies import get_db
 from app.schemas.user import UserRole
-from app.models import User, Student, RealTraining, Invoice, Expense
+from app.models import (
+    User,
+    Student,
+    RealTraining,
+    Invoice,
+    Expense,
+    StudentSubscription,
+    InvoiceStatus,
+)
 
 
 router = APIRouter(prefix="/stats", tags=["Stats"])
@@ -53,6 +61,171 @@ def _generate_buckets(start: date, end: date, interval: str) -> Tuple[List[str],
     return labels, ranges
 
 
+def _get_debt_metrics(db: Session) -> Dict[str, Any]:
+    unpaid_by_client = (
+        db.query(
+            Invoice.client_id,
+            func.sum(Invoice.amount).label("unpaid_total"),
+        )
+        .filter(Invoice.status == InvoiceStatus.UNPAID)
+        .group_by(Invoice.client_id)
+        .all()
+    )
+
+    client_ids = [row.client_id for row in unpaid_by_client]
+    clients = {
+        c.id: c
+        for c in db.query(User)
+        .filter(User.id.in_(client_ids), User.role == UserRole.CLIENT)
+        .all()
+    } if client_ids else {}
+
+    total_unpaid_invoices = 0.0
+    total_outstanding_after_balance = 0.0
+    debtors: List[Dict[str, Any]] = []
+
+    for row in unpaid_by_client:
+        client = clients.get(row.client_id)
+        if not client:
+            continue
+
+        unpaid_total = float(row.unpaid_total or 0.0)
+        balance_credit = float(client.balance or 0.0)
+        amount_owed = max(unpaid_total - balance_credit, 0.0)
+
+        total_unpaid_invoices += unpaid_total
+        total_outstanding_after_balance += amount_owed
+
+        if amount_owed > 0:
+            debtors.append(
+                {
+                    "client_id": client.id,
+                    "first_name": client.first_name,
+                    "last_name": client.last_name,
+                    "unpaid_invoices_total": unpaid_total,
+                    "balance_credit": balance_credit,
+                    "amount_owed": amount_owed,
+                }
+            )
+
+    debtors.sort(key=lambda item: item["amount_owed"], reverse=True)
+
+    return {
+        "total_unpaid_invoices": total_unpaid_invoices,
+        "total_outstanding_after_balance": total_outstanding_after_balance,
+        "debtors": debtors,
+        "debtors_count": len(debtors),
+    }
+
+
+def _get_subscription_metrics(db: Session, now: datetime) -> Dict[str, Any]:
+    active_condition = and_(
+        StudentSubscription.start_date <= now,
+        StudentSubscription.end_date >= now,
+        or_(
+            StudentSubscription.freeze_start_date.is_(None),
+            StudentSubscription.freeze_end_date.is_(None),
+            StudentSubscription.freeze_start_date > now,
+            StudentSubscription.freeze_end_date < now,
+        ),
+    )
+
+    active_student_subscriptions = db.query(StudentSubscription).filter(active_condition).count()
+    students_with_active_subscriptions_count = (
+        db.query(func.count(func.distinct(StudentSubscription.student_id)))
+        .filter(active_condition)
+        .scalar()
+        or 0
+    )
+
+    students_with_active_subscriptions_expr = func.count(func.distinct(Student.id))
+    active_subscriptions_total_expr = func.count(StudentSubscription.id)
+
+    client_rows = (
+        db.query(
+            User.id.label("client_id"),
+            User.first_name,
+            User.last_name,
+            students_with_active_subscriptions_expr.label("students_with_active_subscriptions"),
+            active_subscriptions_total_expr.label("active_subscriptions_total"),
+        )
+        .join(Student, Student.client_id == User.id)
+        .join(StudentSubscription, StudentSubscription.student_id == Student.id)
+        .filter(User.role == UserRole.CLIENT, active_condition)
+        .group_by(User.id, User.first_name, User.last_name)
+        .order_by(desc(active_subscriptions_total_expr), User.last_name, User.first_name)
+        .all()
+    )
+
+    clients_with_active_subscriptions: List[Dict[str, Any]] = []
+    for row in client_rows:
+        clients_with_active_subscriptions.append(
+            {
+                "client_id": row.client_id,
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "students_with_active_subscriptions": int(row.students_with_active_subscriptions or 0),
+                "active_subscriptions_total": int(row.active_subscriptions_total or 0),
+            }
+        )
+
+    return {
+        "active_student_subscriptions": active_student_subscriptions,
+        "students_with_active_subscriptions_count": int(students_with_active_subscriptions_count),
+        "clients_with_active_subscriptions_count": len(client_rows),
+        "clients_with_active_subscriptions": clients_with_active_subscriptions,
+    }
+
+
+def _get_trainers_workload(
+    db: Session,
+    start_d: date,
+    end_d: date,
+) -> Dict[str, Any]:
+    trainings_count_expr = func.count(RealTraining.id)
+    work_days_count_expr = func.count(func.distinct(RealTraining.training_date))
+
+    trainer_rows = (
+        db.query(
+            User.id.label("trainer_id"),
+            User.first_name,
+            User.last_name,
+            trainings_count_expr.label("trainings_count"),
+            work_days_count_expr.label("work_days_count"),
+        )
+        .outerjoin(
+            RealTraining,
+            and_(
+                RealTraining.responsible_trainer_id == User.id,
+                RealTraining.training_date >= start_d,
+                RealTraining.training_date <= end_d,
+                RealTraining.cancelled_at.is_(None),
+            ),
+        )
+        .filter(User.role == UserRole.TRAINER)
+        .group_by(User.id, User.first_name, User.last_name)
+        .order_by(desc(trainings_count_expr), desc(work_days_count_expr), User.last_name, User.first_name)
+        .all()
+    )
+
+    trainers_workload = [
+        {
+            "trainer_id": row.trainer_id,
+            "first_name": row.first_name,
+            "last_name": row.last_name,
+            "trainings_count": int(row.trainings_count or 0),
+            "work_days_count": int(row.work_days_count or 0),
+        }
+        for row in trainer_rows
+    ]
+
+    return {
+        "trainings_per_trainer": trainers_workload,
+        "trainers_count": len(trainers_workload),
+        "trainers_with_workdays_count": len([t for t in trainers_workload if t["work_days_count"] > 0]),
+    }
+
+
 @router.get("/overview")
 def get_overview_stats(
     start_date: str | None = None,
@@ -75,19 +248,6 @@ def get_overview_stats(
     # totals
     total_clients = db.query(User).filter(User.role == UserRole.CLIENT).count()
     total_students = db.query(Student).count()
-
-    new_clients_month = (
-        db.query(User)
-        .filter(User.role == UserRole.CLIENT)
-        .filter(User.id.isnot(None))
-        .filter(User.is_active.isnot(None))
-        .filter(User.id > 0)  # noop safeguard
-        .filter(User.date_of_birth.isnot(None))  # noop safeguard to keep ORM happy
-        .count()
-    )
-    # Note: В проекте нет явного created_at у User — поэтому UI уже считал "новых" по created_at.
-    # Здесь оставляем 0, пока не будет добавлено поле created_at. UI продолжит свой способ.
-    new_clients_month = 0
 
     # Trainings counts for first and overall period convenience
     trainings_in_month = (
@@ -154,7 +314,6 @@ def get_overview_stats(
     return {
         "total_clients": total_clients,
         "total_students": total_students,
-        "new_clients_month": new_clients_month,
         "trainings_in_month": trainings_in_month,
         "trainings_in_year": trainings_in_year,
         "labels": labels,
@@ -319,6 +478,9 @@ def get_owner_dashboard_stats(
     
     # Average revenue per client
     avg_revenue_per_client = total_revenue / total_clients if total_clients > 0 else 0
+    debt_metrics = _get_debt_metrics(db)
+    subscription_metrics = _get_subscription_metrics(db, now)
+    trainers_workload_metrics = _get_trainers_workload(db, start_d, end_d)
 
     return {
         "total_clients": total_clients,
@@ -333,6 +495,7 @@ def get_owner_dashboard_stats(
         "total_expenses": total_expenses,
         "net_profit": net_profit,
         "avg_revenue_per_client": avg_revenue_per_client,
+        **debt_metrics,
+        **subscription_metrics,
+        **trainers_workload_metrics,
     }
-
-
