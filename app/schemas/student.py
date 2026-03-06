@@ -83,6 +83,7 @@ class StudentResponse(StudentBase):
     client: StudentUser  # ID клиента
     active_subscription_id: int | None = None  # ID текущего активного абонемента
     deactivation_date: datetime | None
+    has_unpaid_invoice: bool = False  # True если есть UNPAID инвойс
 
     model_config = {"from_attributes": True}
 

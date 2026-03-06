@@ -50,6 +50,7 @@ def create_subscription(db: Session, subscription: SubscriptionCreate) -> Subscr
         number_of_sessions=subscription.number_of_sessions,
         validity_days=subscription.validity_days,
         is_active=subscription.is_active,
+        sessions_per_week=subscription.sessions_per_week,
     )
     db.add(db_subscription)
     # НЕ делаем commit здесь - это делает сервис

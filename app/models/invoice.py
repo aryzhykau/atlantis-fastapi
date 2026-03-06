@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, Float, Boolean, String, Enum as SQLEnum
+from sqlalchemy import Column, Integer, ForeignKey, DateTime, Date, Float, Boolean, String, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -46,6 +46,9 @@ class Invoice(Base):
     # Связи с пользователями
     cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Кто отменил
     
+    # v2: дедлайн оплаты
+    due_date = Column(Date, nullable=True)
+
     # Флаг автопродления
     is_auto_renewal = Column(Boolean, default=False)  # Создан ли автоматически для автопродления
 

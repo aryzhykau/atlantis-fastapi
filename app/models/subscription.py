@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, case, func
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, Date, case, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 
@@ -16,6 +16,8 @@ class Subscription(Base):
     number_of_sessions = Column(Integer, nullable=False)  # Количество тренировок
     validity_days = Column(Integer, nullable=False)  # Срок действия в днях
     is_active = Column(Boolean, default=True)  # Активность абонемента
+    # v2: лимит тренировок в неделю (number_of_sessions/validity_days остаются до Фазы 2)
+    sessions_per_week = Column(Integer, nullable=True)
 
 
 # Ассоциативная таблица для связи студентов и абонементов
@@ -38,6 +40,10 @@ class StudentSubscription(Base):
     transferred_sessions = Column(Integer, default=0)  # Перенесенные тренировки
     borrowed_sessions_count = Column(Integer, default=0) # Количество занятий, взятых в долг до автопродления
     
+    # v2: дата дедлайна оплаты и флаг пропорциональности (старые поля остаются до Фазы 2)
+    payment_due_date = Column(Date, nullable=True)
+    is_prorated = Column(Boolean, default=False)
+
     # Автопродление
     auto_renewal_invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)  # Инвойс на автопродление
 
