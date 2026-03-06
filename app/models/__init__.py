@@ -10,3 +10,5 @@ from .training_type import TrainingType
 from .student import Student
 from .payment import Payment
 from .invoice import InvoiceStatus, InvoiceType, Invoice
+from .missed_session import MissedSession
+from .system_settings import SystemSettings

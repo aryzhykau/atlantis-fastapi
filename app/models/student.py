@@ -30,5 +30,18 @@ class Student(Base):
     # Связь с реальными тренировками
     real_trainings = relationship("RealTrainingStudent", back_populates="student")
 
+    @property
+    def has_unpaid_invoice(self) -> bool:
+        """True если у студента есть хотя бы один UNPAID инвойс."""
+        from sqlalchemy.orm import object_session
+        from app.models.invoice import Invoice, InvoiceStatus
+        session = object_session(self)
+        if not session:
+            return False
+        return session.query(Invoice).filter(
+            Invoice.student_id == self.id,
+            Invoice.status == InvoiceStatus.UNPAID,
+        ).first() is not None
+
     def __repr__(self):
         return f"<Student(id={self.id}, first_name={self.first_name}, last_name={self.last_name})>"

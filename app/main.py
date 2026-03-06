@@ -13,8 +13,9 @@ from app.endpoints import (
     user, health, client, student, trainer, subscription, real_trainings,
     training_type, payment, invoice, cron, expense, training_template,
     training_student_template, trainer_salaries, client_contacts, stats,
-    admin_management, client_form   
+    admin_management, client_form
 )
+from app.endpoints import subscriptions_v2, missed_sessions, system_settings, cron_v2
 from app.endpoints import client_contacts
 from app.endpoints import stats
 
@@ -76,6 +77,12 @@ app.include_router(client_contacts.router)
 app.include_router(stats.router)
 app.include_router(admin_management.router)
 app.include_router(client_form.router)
+
+# v2 маршруты
+app.include_router(subscriptions_v2.router)
+app.include_router(missed_sessions.router)
+app.include_router(system_settings.router)
+app.include_router(cron_v2.router)
 
 
 

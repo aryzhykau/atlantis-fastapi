@@ -28,7 +28,10 @@ from app.schemas.real_training import (
 from app.database import transactional
 from app.services.financial import FinancialService
 from app.services.subscription import SubscriptionService
+from app.crud.subscription_v2 import create_missed_session, get_system_setting
+from app.models import MissedSession
 from app.services.trainer_salary import TrainerSalaryService
+from app.validators.subscription_validators_v2 import validate_subscription_for_training_v2
 from app.errors.real_training_errors import (
     TrainingNotFound,
     StudentNotOnTraining,
@@ -289,22 +292,57 @@ class RealTrainingService:
         student_training: RealTrainingStudent
     ) -> None:
         student_id = student_training.student_id
-        
-        was_processed = training.processed_at is not None
-        
-        active_subscription = session.query(StudentSubscription).filter(
-            and_(
-                StudentSubscription.student_id == student_id,
-                StudentSubscription.status == "active",
-                StudentSubscription.start_date <= training.training_date,
-                StudentSubscription.end_date >= training.training_date,
-            )
-        ).first()
+
+        # Если у записи студента есть привязанный абонемент — используем его напрямую
+        if student_training.subscription_id:
+            active_subscription = session.query(StudentSubscription).filter(
+                StudentSubscription.id == student_training.subscription_id
+            ).first()
+        else:
+            # Fallback: ищем по датам (v1 legacy, status — hybrid property, не используем в SQL)
+            active_subscription = session.query(StudentSubscription).filter(
+                and_(
+                    StudentSubscription.student_id == student_id,
+                    StudentSubscription.start_date <= training.training_date,
+                    StudentSubscription.end_date >= training.training_date,
+                )
+            ).first()
 
         # If training was already processed (sessions were deducted), return session if it was deducted
         if active_subscription:
-            # If session_deducted is True - that means session was already taken and should be returned
-            if getattr(student_training, 'session_deducted', False):
+            # v2 subscriptions (sessions_per_week > 0) never deduct sessions_left.
+            # School cancels training → создаём MissedSession с is_excused=True (студент может отработать).
+            is_v2 = bool(
+                active_subscription.subscription
+                and (active_subscription.subscription.sessions_per_week or 0) > 0
+            )
+            if is_v2:
+                # Создаём MissedSession для отработки (если ещё нет)
+                existing_missed = session.query(MissedSession).filter(
+                    MissedSession.real_training_student_id == student_training.id
+                ).first()
+                if not existing_missed:
+                    makeup_window_days = int(get_system_setting(session, "makeup_window_days", "90"))
+                    makeup_deadline = training.training_date + timedelta(days=makeup_window_days)
+                    missed = create_missed_session(
+                        session,
+                        student_id=student_id,
+                        student_subscription_id=active_subscription.id,
+                        real_training_student_id=student_training.id,
+                        is_excused=True,
+                        makeup_deadline_date=makeup_deadline,
+                    )
+                    logger.info(
+                        f"Training cancellation (v2): MissedSession {missed.id} created for "
+                        f"student {student_id} (school cancel), deadline={makeup_deadline}"
+                    )
+                else:
+                    logger.info(
+                        f"Training cancellation (v2): MissedSession already exists for "
+                        f"student {student_id} on training {training.id}."
+                    )
+            elif getattr(student_training, 'session_deducted', False):
+                # v1: If session_deducted is True — return it
                 active_subscription.sessions_left += 1
                 student_training.session_deducted = False
                 logger.info(f"Training cancellation: Session returned to subscription for student {student_id}. "
@@ -349,18 +387,26 @@ class RealTrainingService:
             ).first()
 
             if active_subscription:
-                if student_training.session_deducted:
-                    # If a session was deducted, it means it was counted against the subscription.
-                    # Now, instead of returning it to sessions_left, add to skipped_sessions (max 3).
+                # v2: CANCELLED_SAFE освобождает слот недельного лимита автоматически
+                # (count_subscription_only_visits его не считает). sessions_left не трогаем.
+                is_v2 = bool(
+                    active_subscription.subscription
+                    and (active_subscription.subscription.sessions_per_week or 0) > 0
+                )
+                if is_v2:
+                    logger.info(
+                        f"Safe cancellation (v2): student {student_id} on training {training_id}. "
+                        f"Slot freed in weekly limit; no sessions_left change."
+                    )
+                elif student_training.session_deducted:
+                    # v1: If a session was deducted, add to skipped_sessions (max 3).
                     if active_subscription.skipped_sessions < 3:
                         active_subscription.skipped_sessions += 1
                         logger.info(f"Safe cancellation: Session added to skipped_sessions for student {student_id} on training {training_id}. "
                                    f"Skipped sessions: {active_subscription.skipped_sessions}")
                     else:
                         logger.info(f"Safe cancellation: Skipped sessions limit reached for student {student_id}. Session not added.")
-                    
-                    # IMPORTANT: session_deducted remains True because the session is accounted for as a skipped session.
-                    # It is not returned to sessions_left, but it is also not available for future deductions.
+                    # IMPORTANT: session_deducted remains True (accounted as skipped).
                 else:
                     logger.info(f"Safe cancellation: No session deduction was recorded for student {student_id} on training {training_id}")
 
@@ -436,17 +482,45 @@ class RealTrainingService:
                 raise ValueError(f"Тренировка заполнена. Максимальное количество участников: {training.training_type.max_participants}")
 
         if training.training_type.is_subscription_only and not student_data.is_trial:
-            active_subscription = self.subscription_service.get_active_subscription(session, student.id) # Use service method
+            training_date = training.training_date
+            if hasattr(training_date, 'date'):
+                training_date = training_date.date()
 
-            if not active_subscription:
-                raise SubscriptionRequired("Для этой тренировки требуется активный абонемент, который у студента отсутствует.")
-            
-            if active_subscription.sessions_left <= 0 and not active_subscription.is_auto_renew:
-                raise InsufficientSessions("На абонементе закончились занятия и не включено автопродление.")
+            is_valid, error_msg, active_subscription, makeup_session = validate_subscription_for_training_v2(
+                session,
+                student.id,
+                training_date,
+                training.training_type.is_subscription_only,
+            )
+
+            if not is_valid:
+                if "абонемент" in error_msg.lower() or "subscription" in error_msg.lower():
+                    raise SubscriptionRequired(error_msg)
+                raise InsufficientSessions(error_msg)
+        else:
+            active_subscription = None
+            makeup_session = None
 
         requires_payment = not student_data.is_trial
 
-        return crud.add_student_to_training_db(session, training_id, student_data, is_trial=student_data.is_trial, requires_payment=requires_payment)
+        db_record = crud.add_student_to_training_db(
+            session, training_id, student_data,
+            is_trial=student_data.is_trial,
+            requires_payment=requires_payment,
+        )
+
+        # Привязываем абонемент к записи — нужно для корректной отмены/возврата занятий
+        if active_subscription is not None:
+            db_record.subscription_id = active_subscription.id
+            session.flush()
+
+        # Если это отработка пропуска — помечаем пропуск как отработанный
+        if makeup_session is not None:
+            makeup_session.made_up_at = datetime.now(timezone.utc)
+            makeup_session.made_up_real_training_student_id = db_record.id
+            session.flush()
+
+        return db_record
 
     def _update_student_attendance_logic(
         self,
@@ -520,6 +594,22 @@ class RealTrainingService:
                 StudentSubscription.id == student_training.subscription_id
             ).first()
 
+            # Detect v2 subscription (sessions_per_week > 0): "penalty" is already
+            # enforced by CANCELLED_PENALTY being counted in the weekly limit.
+            # daily_operations_v2 will create a MissedSession. No invoice needed.
+            is_v2_subscription = bool(
+                active_subscription
+                and active_subscription.subscription
+                and (active_subscription.subscription.sessions_per_week or 0) > 0
+            )
+            if is_v2_subscription:
+                logger.info(
+                    f"v2 penalty: CANCELLED_PENALTY recorded for student {student_id} on training {training.id}. "
+                    f"Status counted in weekly limit; MissedSession will be created by daily_operations_v2."
+                )
+                return
+
+            # v1: deduct a session if available
             if active_subscription and active_subscription.sessions_left > 0:
                 if not student_training.session_deducted:
                     active_subscription.sessions_left -= 1
@@ -529,7 +619,7 @@ class RealTrainingService:
                 else:
                     logger.info(f"Late cancellation penalty: Session already deducted for student {student_id}.")
             else:
-                # Fallback to invoice if subscription has no sessions left
+                # v1 fallback to invoice if subscription has no sessions left
                 self._handle_pay_per_session_penalty(session, training, student_id)
         # Pay-per-session user
         else:

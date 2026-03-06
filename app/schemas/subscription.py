@@ -11,6 +11,7 @@ class SubscriptionBase(BaseModel):
     number_of_sessions: int = Field(..., description="Количество тренировок")
     validity_days: int = Field(..., description="Срок действия в днях")
     is_active: bool = Field(True, description="Активен ли абонемент")
+    sessions_per_week: Optional[int] = Field(None, description="Занятий в неделю (v2)")
 
 
 class SubscriptionCreate(SubscriptionBase):
@@ -25,6 +26,7 @@ class SubscriptionUpdate(BaseModel):
     number_of_sessions: Optional[int] = Field(None, description="Количество тренировок")
     validity_days: Optional[int] = Field(None, description="Срок действия в днях")
     is_active: Optional[bool] = Field(None, description="Активен ли абонемент")
+    sessions_per_week: Optional[int] = Field(None, description="Занятий в неделю (v2, null = v1)")
 
 
 class SubscriptionResponse(SubscriptionBase):
