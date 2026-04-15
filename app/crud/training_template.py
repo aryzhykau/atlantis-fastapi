@@ -155,6 +155,12 @@ def create_training_student_template(db: Session, student_template_data: Trainin
         is_frozen=False
     )
     db.add(db_student_template)
+    db.flush()
+    db.refresh(db_student_template)
+
+    # Триггер: проверяем не надо ли активировать PENDING_SCHEDULE абонемент
+    _check_and_confirm_schedule(db, student_template_data.student_id)
+
     db.commit()
     db.refresh(db_student_template)
     return db_student_template
@@ -184,3 +190,45 @@ def delete_training_student_template(db: Session, student_template_id: int):
     db.delete(db_student_template)
     db.commit()
     return db_student_template
+
+
+# ---------------------------------------------------------------------------
+# Внутренний хелпер: триггер подтверждения расписания
+# ---------------------------------------------------------------------------
+
+def _check_and_confirm_schedule(db: Session, student_id: int) -> None:
+    """Проверяет, готово ли расписание студента для активации PENDING_SCHEDULE абонемента.
+
+    Срабатывает только если:
+    - у студента есть абонемент в статусе PENDING_SCHEDULE
+    - count(активных шаблонов) >= sessions_per_week
+    """
+    import logging
+    from app.crud.subscription_v2 import (
+        get_pending_schedule_subscription,
+        count_student_active_templates,
+        get_student_template_ids,
+    )
+    from app.services.subscription_v2 import confirm_schedule_and_create_invoice
+
+    logger = logging.getLogger(__name__)
+
+    pending_sub = get_pending_schedule_subscription(db, student_id)
+    if not pending_sub:
+        return
+
+    sessions_per_week = pending_sub.subscription.sessions_per_week or 1
+    template_count = count_student_active_templates(db, student_id)
+
+    if template_count >= sessions_per_week:
+        template_ids = get_student_template_ids(db, student_id)
+        try:
+            confirm_schedule_and_create_invoice(db, pending_sub.id, template_ids)
+            logger.info(
+                f"Schedule confirmed for student {student_id}, "
+                f"subscription {pending_sub.id} activated"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to confirm schedule for student {student_id}: {e}"
+            )

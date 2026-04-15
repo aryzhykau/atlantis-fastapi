@@ -20,7 +20,7 @@ class Config(BaseSettings):
     GOOGLE_DISCOVERY_URL: str = os.getenv("GOOGLE_DISCOVERY_URL", "")
     CRON_API_KEY: str = os.getenv("CRON_API_KEY", "test-cron-api-key-12345")
 
-    model_config = ConfigDict(env_file=os.getenv("ENV_FILE", ".env"))
+    model_config = ConfigDict(env_file=os.getenv("ENV_FILE", ".envdev"))
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:

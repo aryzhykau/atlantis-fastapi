@@ -84,6 +84,7 @@ class StudentResponse(StudentBase):
     active_subscription_id: int | None = None  # ID текущего активного абонемента
     deactivation_date: datetime | None
     has_unpaid_invoice: bool = False  # True если есть UNPAID инвойс
+    trial_used_at: datetime | None = None  # Когда использовал пробное занятие
 
     model_config = {"from_attributes": True}
 

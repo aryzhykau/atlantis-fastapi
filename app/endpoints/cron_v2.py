@@ -1,8 +1,9 @@
 """Cron-эндпоинты v2, защищены X-API-Key."""
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.security import verify_api_key
@@ -35,9 +36,24 @@ def auto_renewal_v2_endpoint(db: Session = Depends(get_db)):
 
 @router.post("/process-daily-operations", dependencies=[Depends(verify_api_key)])
 def process_daily_operations_v2_endpoint(db: Session = Depends(get_db)):
-    """Обрабатывает is_subscription_only тренировки текущего дня (создание MissedSession).
+    """Обрабатывает тренировки вчерашнего дня:
+    - is_subscription_only=True → создаёт MissedSession.
+    - is_subscription_only=False → переводит PENDING инвойсы в UNPAID/CANCELLED.
     Запускается ежедневно в 01:00.
     """
     service = DailyOperationsServiceV2(db)
     result = service.process_daily_operations_v2()
+    return {**result, "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@router.post("/backfill-pending-invoices", dependencies=[Depends(verify_api_key)])
+def backfill_pending_invoices_endpoint(
+    before_date: Optional[date] = Query(None, description="Обработать инвойсы до этой даты (не включая). По умолчанию — сегодня."),
+    db: Session = Depends(get_db),
+):
+    """Одноразовый бэкфилл: переводит PENDING TRAINING инвойсы для прошедших тренировок в UNPAID/CANCELLED.
+    Идемпотентен — безопасно запускать повторно.
+    """
+    service = DailyOperationsServiceV2(db)
+    result = service.backfill_pending_invoices(before_date=before_date)
     return {**result, "timestamp": datetime.now(timezone.utc).isoformat()}

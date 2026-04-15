@@ -97,17 +97,16 @@ def add_subscription_to_student_v2(
 ) -> "StudentSubscription":
     """Назначает абонемент студенту (v2 логика).
 
-    start_date = сегодня, end_date = последний день текущего месяца.
-    Пропорциональная цена если purchase_date.day > 1.
-    Создаёт PENDING инвойс, пробует автооплату.
+    Если покупка 1-го числа: сразу создаёт PENDING инвойс, абонемент активен.
+    Если mid-month: абонемент в PENDING_SCHEDULE, инвойс выставится после настройки расписания.
     """
-    from app.database import transactional
     from app.models import StudentSubscription, Subscription
     from app.models.student import Student
     from app.models.invoice import InvoiceStatus, InvoiceType
     from app.schemas.invoice import InvoiceCreate
     from app.crud import subscription as sub_crud
     from app.crud import student as student_crud
+    from app.crud.subscription_v2 import get_pending_schedule_subscription, get_active_or_pending_subscription
     from app.services.financial import FinancialService
     from app.errors.subscription_errors import SubscriptionNotFound, SubscriptionAlreadyActive
 
@@ -123,41 +122,171 @@ def add_subscription_to_student_v2(
     if not student or not student.is_active:
         raise ValueError("Student not found or inactive")
 
-    sessions_per_week = subscription.sessions_per_week or 1
+    # Проверка на дублирующий абонемент
     purchase_date = datetime.now(timezone.utc).date()
+    existing_active = get_active_or_pending_subscription(db, student_id, purchase_date)
+    if existing_active:
+        raise SubscriptionAlreadyActive("Student already has an active subscription")
+    existing_pending_schedule = get_pending_schedule_subscription(db, student_id)
+    if existing_pending_schedule:
+        raise SubscriptionAlreadyActive("Student already has a subscription pending schedule setup")
 
     end_date_d = _get_month_end_date(purchase_date)
     start_dt = datetime(purchase_date.year, purchase_date.month, purchase_date.day, tzinfo=timezone.utc)
     end_dt = datetime(end_date_d.year, end_date_d.month, end_date_d.day, 23, 59, 59, tzinfo=timezone.utc)
 
     if purchase_date.day == 1:
-        is_prorated = False
-        amount = subscription.price
+        # Полный месяц: сразу активируем и выставляем счёт
         payment_due_date = _get_payment_due_date(purchase_date)
+        student_sub = StudentSubscription(
+            student_id=student_id,
+            subscription_id=subscription_id,
+            start_date=start_dt,
+            end_date=end_dt,
+            is_auto_renew=is_auto_renew,
+            is_prorated=False,
+            payment_due_date=payment_due_date,
+            sessions_left=0,
+            schedule_confirmed_at=datetime.now(timezone.utc),
+        )
+        db.add(student_sub)
+        db.flush()
+        db.refresh(student_sub)
+
+        invoice_data = InvoiceCreate(
+            client_id=student.client_id,
+            student_id=student_id,
+            subscription_id=subscription_id,
+            student_subscription_id=student_sub.id,
+            type=InvoiceType.SUBSCRIPTION,
+            amount=subscription.price,
+            description=f"Абонемент: {subscription.name} (v2)",
+            status=InvoiceStatus.PENDING,
+            is_auto_renewal=False,
+        )
+        invoice = financial_service.create_standalone_invoice_in_session(db, invoice_data, auto_pay=True)
+        invoice.due_date = payment_due_date
+        db.flush()
     else:
-        is_prorated = True
-        amount = _calculate_prorated_amount(subscription.price, purchase_date, sessions_per_week)
-        next_month_first = _get_first_of_next_month(purchase_date)
+        # Mid-month: PENDING_SCHEDULE, инвойс выставится после настройки расписания
+        student_sub = StudentSubscription(
+            student_id=student_id,
+            subscription_id=subscription_id,
+            start_date=start_dt,
+            end_date=end_dt,
+            is_auto_renew=is_auto_renew,
+            is_prorated=True,
+            payment_due_date=None,
+            sessions_left=0,
+            schedule_confirmed_at=None,  # PENDING_SCHEDULE
+        )
+        db.add(student_sub)
+        db.flush()
+        db.refresh(student_sub)
+
+    return student_sub
+
+
+def confirm_schedule_and_create_invoice(
+    db: Session,
+    student_subscription_id: int,
+    template_ids: list[int],
+) -> "Invoice":
+    """Триггер: вызывается когда count(шаблоны) == sessions_per_week.
+
+    Считает сессии по дням недели из TrainingStudentTemplate (не зависит от RealTraining).
+
+    Для каждого шаблона студента:
+      - day_of_week = TrainingTemplate.day_number (1=Пн ... 7=Вс)
+      - effective_start = max(today, TrainingStudentTemplate.start_date)
+      - remaining = кол-во вхождений этого дня недели от effective_start до конца месяца
+      - total    = кол-во вхождений этого дня недели за весь месяц
+
+    Если remaining == 0 → сдвигаем на следующий месяц, полная цена.
+    """
+    from app.models import StudentSubscription
+    from app.models.training_template import TrainingStudentTemplate, TrainingTemplate
+    from app.models.invoice import InvoiceStatus, InvoiceType
+    from app.schemas.invoice import InvoiceCreate
+    from app.crud import subscription as sub_crud
+    from app.crud import student as student_crud
+    from app.services.financial import FinancialService
+
+    financial_service = FinancialService(db)
+
+    student_sub = db.query(StudentSubscription).filter(
+        StudentSubscription.id == student_subscription_id
+    ).first()
+    if not student_sub:
+        raise ValueError(f"StudentSubscription {student_subscription_id} not found")
+    if student_sub.schedule_confirmed_at is not None:
+        return None  # идемпотентность
+
+    subscription = sub_crud.get_subscription_by_id(db, student_sub.subscription_id)
+    student = student_crud.get_student_by_id(db, student_sub.student_id)
+
+    today = datetime.now(timezone.utc).date()
+    month_start = today.replace(day=1)
+    month_end = _get_month_end_date(today)
+
+    def _count_weekday_occurrences(day_number: int, start: date, end: date) -> int:
+        """Считает кол-во вхождений дня недели (1=Пн..7=Вс) в диапазоне [start, end]."""
+        if start > end:
+            return 0
+        # isoweekday(): 1=Пн .. 7=Вс — совпадает с day_number
+        days_total = (end - start).days + 1
+        full_weeks, remainder = divmod(days_total, 7)
+        count = full_weeks
+        # start.isoweekday() .. start.isoweekday() + remainder - 1
+        start_dow = start.isoweekday()
+        for offset in range(remainder):
+            if ((start_dow - 1 + offset) % 7) + 1 == day_number:
+                count += 1
+        return count
+
+    # Загружаем студенческие шаблоны по training_template_id
+    student_templates = (
+        db.query(TrainingStudentTemplate, TrainingTemplate)
+        .join(TrainingTemplate, TrainingStudentTemplate.training_template_id == TrainingTemplate.id)
+        .filter(
+            TrainingStudentTemplate.student_id == student_sub.student_id,
+            TrainingStudentTemplate.is_frozen == False,
+            TrainingTemplate.id.in_(template_ids),
+        )
+        .all()
+    )
+
+    total_sessions = 0
+    remaining_sessions = 0
+
+    for tst, tt in student_templates:
+        day_number = tt.day_number  # 1..7
+        # effective start = max(today, шаблон.start_date)
+        effective_start = max(today, tst.start_date)
+        total_sessions += _count_weekday_occurrences(day_number, month_start, month_end)
+        remaining_sessions += _count_weekday_occurrences(day_number, effective_start, month_end)
+
+    if remaining_sessions == 0 or total_sessions == 0:
+        # В этом месяце тренировок уже нет — сдвигаем на следующий
+        next_first = _get_first_of_next_month(today)
+        next_last = _get_month_end_date(next_first)
+        student_sub.start_date = datetime(next_first.year, next_first.month, next_first.day, tzinfo=timezone.utc)
+        student_sub.end_date = datetime(next_last.year, next_last.month, next_last.day, 23, 59, 59, tzinfo=timezone.utc)
+        amount = subscription.price
+        payment_due_date = _get_payment_due_date(next_first)
+    else:
+        amount = round(subscription.price * remaining_sessions / total_sessions, 2)
+        next_month_first = _get_first_of_next_month(today)
         payment_due_date = _get_payment_due_date(next_month_first)
 
-    student_sub = StudentSubscription(
-        student_id=student_id,
-        subscription_id=subscription_id,
-        start_date=start_dt,
-        end_date=end_dt,
-        is_auto_renew=is_auto_renew,
-        is_prorated=is_prorated,
-        payment_due_date=payment_due_date,
-        sessions_left=0,  # v2 не использует sessions_left
-    )
-    db.add(student_sub)
+    student_sub.payment_due_date = payment_due_date
+    student_sub.schedule_confirmed_at = datetime.now(timezone.utc)
     db.flush()
-    db.refresh(student_sub)
 
     invoice_data = InvoiceCreate(
         client_id=student.client_id,
-        student_id=student_id,
-        subscription_id=subscription_id,
+        student_id=student_sub.student_id,
+        subscription_id=student_sub.subscription_id,
         student_subscription_id=student_sub.id,
         type=InvoiceType.SUBSCRIPTION,
         amount=amount,
@@ -169,7 +298,7 @@ def add_subscription_to_student_v2(
     invoice.due_date = payment_due_date
     db.flush()
 
-    return student_sub
+    return invoice
 
 
 def process_auto_renewals_v2(db: Session) -> dict:
@@ -300,16 +429,19 @@ def process_overdue_invoices_v2(db: Session) -> dict:
     paid = 0
     unpaid = 0
     for invoice in overdue:
-        user = user_crud.get_user_by_id(db, invoice.client_id)
-        balance = (user.balance or 0.0) if user else 0.0
-        if user and balance >= invoice.amount:
-            from app.schemas.user import UserUpdate
-            invoice_crud.mark_invoice_as_paid(db, invoice.id)
-            user_crud.update_user(db, user.id, UserUpdate(balance=balance - invoice.amount))
-            paid += 1
-        else:
-            invoice_crud.mark_invoice_as_unpaid(db, invoice.id)
-            unpaid += 1
+        try:
+            user = user_crud.get_user_by_id(db, invoice.client_id)
+            balance = (user.balance or 0.0) if user else 0.0
+            if user and balance >= invoice.amount:
+                from app.schemas.user import UserUpdate
+                invoice_crud.mark_invoice_as_paid(db, invoice.id)
+                user_crud.update_user(db, user.id, UserUpdate(balance=balance - invoice.amount))
+                paid += 1
+            else:
+                invoice_crud.mark_invoice_as_unpaid(db, invoice.id)
+                unpaid += 1
+        except Exception as e:
+            logger.error(f"Error processing overdue invoice {invoice.id}: {e}")
 
     db.commit()
     return {"paid": paid, "unpaid": unpaid}
