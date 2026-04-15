@@ -297,6 +297,105 @@ def remove_student_from_training(
     return True
 
 
+def generate_trainings_for_template(db: Session, template_id: int) -> Tuple[int, List[RealTraining]]:
+    """Генерирует тренировки по конкретному шаблону на текущую и следующую неделю.
+
+    Идемпотентна — пропускает уже существующие тренировки.
+    Возвращает (количество созданных, список созданных тренировок).
+    """
+    template = db.query(TrainingTemplate).options(
+        selectinload(TrainingTemplate.training_type)
+    ).filter(
+        TrainingTemplate.id == template_id,
+        TrainingTemplate.is_deleted.is_(False),
+    ).first()
+
+    if not template or not template.training_type:
+        return 0, []
+
+    today = date.today()
+    current_monday = today - timedelta(days=today.weekday())
+
+    created = []
+    for week_offset in (0, 1):
+        week_monday = current_monday + timedelta(weeks=week_offset)
+        training_date = week_monday + timedelta(days=template.day_number - 1)
+
+        existing = db.query(RealTraining).filter(
+            RealTraining.template_id == template.id,
+            RealTraining.training_date == training_date,
+        ).first()
+        if existing:
+            continue
+
+        new_training = RealTraining(
+            training_date=training_date,
+            start_time=template.start_time,
+            responsible_trainer_id=template.responsible_trainer_id,
+            training_type_id=template.training_type_id,
+            template_id=template.id,
+            is_template_based=True,
+        )
+        db.add(new_training)
+        db.flush()
+
+        max_participants = template.training_type.max_participants
+
+        potential_students = db.query(TrainingStudentTemplate).options(
+            joinedload(TrainingStudentTemplate.student)
+        ).filter(
+            TrainingStudentTemplate.training_template_id == template.id,
+            TrainingStudentTemplate.is_frozen.is_(False),
+            TrainingStudentTemplate.start_date <= training_date,
+        ).order_by(
+            TrainingStudentTemplate.start_date.asc(),
+            TrainingStudentTemplate.id.asc(),
+        ).all()
+
+        added = 0
+        for ts in potential_students:
+            if added >= max_participants:
+                break
+
+            if template.training_type.is_subscription_only:
+                active_sub = db.query(StudentSubscription).filter(
+                    StudentSubscription.student_id == ts.student_id,
+                    StudentSubscription.status == 'active',
+                    StudentSubscription.start_date <= training_date,
+                    StudentSubscription.end_date >= training_date,
+                ).first()
+                if not active_sub or (active_sub.sessions_left <= 0 and not active_sub.is_auto_renew):
+                    continue
+
+            student_entry = RealTrainingStudent(
+                real_training_id=new_training.id,
+                student_id=ts.student_id,
+                template_student_id=ts.id,
+                status=AttendanceStatus.REGISTERED,
+            )
+            db.add(student_entry)
+            added += 1
+
+            if not template.training_type.is_subscription_only:
+                invoice = Invoice(
+                    client_id=ts.student.client_id,
+                    student_id=ts.student_id,
+                    training_id=new_training.id,
+                    type=InvoiceType.TRAINING,
+                    status="PENDING",
+                    amount=template.training_type.price,
+                    description=f"Счет за тренировку {template.training_type.name} {training_date.strftime('%d.%m.%Y')}",
+                )
+                db.add(invoice)
+
+        created.append(new_training)
+
+    if created:
+        db.commit()
+
+    return len(created), created
+
+
 def generate_next_week_trainings(db: Session) -> Tuple[int, List[RealTraining]]:
     """
     Генерирует тренировки на следующую неделю на основе шаблонов.

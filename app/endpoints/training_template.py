@@ -15,6 +15,7 @@ from app.crud.training_template import (
     update_training_template,
     delete_training_template,
 )
+from app.crud.real_training import generate_trainings_for_template
 
 router = APIRouter(prefix="/training_templates", tags=["Training Templates"])
 
@@ -77,3 +78,24 @@ def delete_training_template_endpoint(
     if not deleted_template:
         raise HTTPException(status_code=404, detail="Training template not found")
     return {"success": True, "id": template_id, "message": "Training template deleted successfully"}
+
+
+# Генерация тренировок по шаблону на текущую и следующую неделю
+@router.post("/{template_id}/generate-trainings")
+def generate_trainings_for_template_endpoint(
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user(["ADMIN", "OWNER"]))
+):
+    """Создаёт реальные тренировки по шаблону на текущую и следующую неделю.
+    Пропускает уже существующие даты (идемпотентен).
+    """
+    template = get_training_template_by_id(db=db, template_id=template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Training template not found")
+
+    created_count, trainings = generate_trainings_for_template(db, template_id)
+    return {
+        "created_count": created_count,
+        "dates": [t.training_date.isoformat() for t in trainings],
+    }
