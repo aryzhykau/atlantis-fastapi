@@ -49,7 +49,7 @@ def get_active_or_pending_subscription(
 ) -> Optional[StudentSubscription]:
     """Возвращает активный или pending абонемент, чей диапазон покрывает training_date.
 
-    Frozen абонементы исключаются.
+    Frozen и pending_schedule абонементы исключаются.
     """
     return (
         db.query(StudentSubscription)
@@ -58,6 +58,8 @@ def get_active_or_pending_subscription(
                 StudentSubscription.student_id == student_id,
                 func.date(StudentSubscription.start_date) <= training_date,
                 func.date(StudentSubscription.end_date) >= training_date,
+                # Только подтверждённые (не pending_schedule)
+                StudentSubscription.schedule_confirmed_at.isnot(None),
                 # Исключаем замороженные
                 ~(
                     and_(
@@ -83,7 +85,7 @@ def count_subscription_only_visits(
     week_start: date,
     week_end: date,
 ) -> int:
-    """Считает записи студента на is_subscription_only тренировки за Пн-Вс неделю.
+    """Считает ВСЕ записи студента на is_subscription_only тренировки за Пн-Вс неделю.
 
     Исключает статус CANCELLED_SAFE (слот освобождён).
     Считает: PRESENT, ABSENT, CANCELLED_PENALTY, REGISTERED и все прочие.
@@ -192,3 +194,55 @@ def excuse_missed_session(
     missed.makeup_deadline_date = makeup_deadline_date
     db.flush()
     return missed
+
+
+# ---------------------------------------------------------------------------
+# Helpers for schedule confirmation trigger
+# ---------------------------------------------------------------------------
+
+def get_pending_schedule_subscription(
+    db: Session,
+    student_id: int,
+) -> Optional[StudentSubscription]:
+    """Возвращает абонемент студента в статусе PENDING_SCHEDULE (schedule_confirmed_at IS NULL)."""
+    return (
+        db.query(StudentSubscription)
+        .filter(
+            StudentSubscription.student_id == student_id,
+            StudentSubscription.schedule_confirmed_at.is_(None),
+        )
+        .first()
+    )
+
+
+def count_student_active_templates(
+    db: Session,
+    student_id: int,
+) -> int:
+    """Считает количество активных (не замороженных) TrainingStudentTemplate студента."""
+    from app.models.training_template import TrainingStudentTemplate
+    return (
+        db.query(func.count(TrainingStudentTemplate.id))
+        .filter(
+            TrainingStudentTemplate.student_id == student_id,
+            TrainingStudentTemplate.is_frozen == False,
+        )
+        .scalar()
+    ) or 0
+
+
+def get_student_template_ids(
+    db: Session,
+    student_id: int,
+) -> list[int]:
+    """Возвращает список training_template_id для всех активных шаблонов студента."""
+    from app.models.training_template import TrainingStudentTemplate
+    rows = (
+        db.query(TrainingStudentTemplate.training_template_id)
+        .filter(
+            TrainingStudentTemplate.student_id == student_id,
+            TrainingStudentTemplate.is_frozen == False,
+        )
+        .all()
+    )
+    return [r[0] for r in rows]

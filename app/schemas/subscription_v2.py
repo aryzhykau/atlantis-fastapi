@@ -48,6 +48,7 @@ class StudentSubscriptionResponseV2(BaseModel):
     payment_due_date: Optional[date] = None
     is_prorated: bool = False
     sessions_per_week: Optional[int] = None
+    schedule_confirmed_at: Optional[datetime] = None
 
     # Legacy поля (оставлены для backward compat фронта)
     sessions_left: Optional[int] = None
@@ -100,3 +101,23 @@ class SystemSettingResponse(BaseModel):
 class SystemSettingUpdate(BaseModel):
     key: str = Field(..., description="Ключ настройки")
     value: str = Field(..., description="Новое значение")
+
+
+# ---------------------------------------------------------------------------
+# Training template student add response
+# ---------------------------------------------------------------------------
+
+class TemplateAddStudentResponse(BaseModel):
+    """Ответ при добавлении студента в шаблон.
+
+    subscription_activated=True если это добавление запустило триггер активации абонемента.
+    Фронт показывает toast уведомление если subscription_activated=True.
+    """
+    id: int
+    training_template_id: int
+    student_id: int
+    start_date: date
+    subscription_activated: bool = False
+    subscription_sessions_left_to_add: Optional[int] = None
+
+    model_config = {"from_attributes": True}

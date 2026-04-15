@@ -43,6 +43,8 @@ class StudentSubscription(Base):
     # v2: дата дедлайна оплаты и флаг пропорциональности (старые поля остаются до Фазы 2)
     payment_due_date = Column(Date, nullable=True)
     is_prorated = Column(Boolean, default=False)
+    # v2: NULL = PENDING_SCHEDULE (расписание ещё не настроено), NOT NULL = активирован
+    schedule_confirmed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Автопродление
     auto_renewal_invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)  # Инвойс на автопродление
@@ -57,7 +59,11 @@ class StudentSubscription(Base):
     def status(self):
         """Вычисляет статус абонемента с учетом временных зон"""
         current_time = datetime.now(timezone.utc)  # Используем timezone-aware datetime
-        
+
+        # v2: расписание ещё не настроено
+        if self.schedule_confirmed_at is None:
+            return "pending_schedule"
+
         # Проверяем, что подписка ещё не началась (для автопродления)
         if current_time < self.start_date:
             return "pending"
@@ -79,6 +85,7 @@ class StudentSubscription(Base):
         now = func.now()
         
         return case(
+            (cls.schedule_confirmed_at.is_(None), "pending_schedule"),
             (now < cls.start_date, "pending"),
             (
                 (cls.freeze_start_date.isnot(None)) &

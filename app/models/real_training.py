@@ -65,7 +65,7 @@ class RealTrainingStudent(Base):
 
     # Relationships
     real_training = relationship("RealTraining", back_populates="students")
-    student = relationship("Student", back_populates="real_trainings")
+    student = relationship("Student", foreign_keys=[student_id], back_populates="real_trainings")
     template_student = relationship("TrainingStudentTemplate", back_populates="real_trainings")
     attendance_marked_by = relationship("User", foreign_keys=[attendance_marked_by_id])
     subscription = relationship("StudentSubscription", back_populates="real_trainings") 

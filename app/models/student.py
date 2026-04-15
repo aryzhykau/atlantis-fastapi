@@ -28,7 +28,11 @@ class Student(Base):
     active_subscription = relationship("Subscription", foreign_keys=[active_subscription_id])
 
     # Связь с реальными тренировками
-    real_trainings = relationship("RealTrainingStudent", back_populates="student")
+    real_trainings = relationship("RealTrainingStudent", foreign_keys="RealTrainingStudent.student_id", back_populates="student")
+
+    # Пробное занятие
+    trial_used_at = Column(DateTime, nullable=True)
+    trial_real_training_student_id = Column(Integer, ForeignKey("real_training_students.id"), nullable=True)
 
     @property
     def has_unpaid_invoice(self) -> bool:
