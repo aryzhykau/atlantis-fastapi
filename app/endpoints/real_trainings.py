@@ -117,8 +117,8 @@ def create_training_endpoint(
     """
     service = RealTrainingService(db)
     try:
-        if training_data.trial_student_id:
-            return service.create_real_training_with_trial_student(training_data)
+        if training_data.student_id:
+            return service.create_real_training_with_student(training_data)
         else:
             return create_real_training(db, training_data)
     except Exception as e:
