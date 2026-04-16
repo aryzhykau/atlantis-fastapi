@@ -35,6 +35,8 @@ class RealTrainingCreate(BaseModel):
     responsible_trainer_id: int
     training_type_id: int
     template_id: Optional[int] = None
+    student_id: Optional[int] = None
+    is_trial: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

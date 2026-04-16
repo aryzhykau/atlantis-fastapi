@@ -119,21 +119,21 @@ class RealTrainingService:
         with transactional(self.db) as session:
             return self._update_student_attendance_logic(session, training_id, student_id, update_data, marker_id)
 
-    def create_real_training_with_trial_student(
+    def create_real_training_with_student(
         self,
-        training_data: RealTrainingWithTrialStudentCreate,
+        training_data: RealTrainingCreate,
     ) -> RealTraining:
         """
-        Создает новую тренировку с одним пробным студентом.
+        Создает новую тренировку с одним студентом (пробный или обычный).
         """
         with transactional(self.db) as session:
             # Create the real training
             db_training = crud.create_real_training(session, training_data)
 
-            # Add the trial student
+            # Add the student
             student_data = RealTrainingStudentCreate(
                 student_id=training_data.student_id,
-                is_trial=True
+                is_trial=training_data.is_trial
             )
             self._add_student_to_training_logic(session, db_training.id, student_data)
 
